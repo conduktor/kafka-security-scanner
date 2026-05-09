@@ -121,6 +121,10 @@ public final class Main implements Runnable {
             description = "Directory of governance artifacts (runbooks, drill logs) for the docs collector")
     private String docsDir;
 
+    @Option(names = {"--prometheus-url"}, defaultValue = "",
+            description = "Prometheus base URL for the alerts collector (e.g. http://prom:9090)")
+    private String prometheusUrl;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -170,6 +174,7 @@ public final class Main implements Runnable {
                     schemaRegistryUrl.isBlank() ? null : schemaRegistryUrl,
                     restProxyUrl.isBlank() ? null : restProxyUrl,
                     docsDir.isBlank() ? null : docsDir,
+                    prometheusUrl.isBlank() ? null : prometheusUrl,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -200,6 +205,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("docs")) {
                     collectors.add(new io.kafkascanner.collectors.DocsCollector());
+                }
+                if (enabled.contains("alerts")) {
+                    collectors.add(new io.kafkascanner.collectors.AlertRuleCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)

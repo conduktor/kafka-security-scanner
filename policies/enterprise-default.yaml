@@ -1140,36 +1140,36 @@ controls:
 
   # ═══════════════ MONITORING (6) ═══════════════
   - id: KAFKA-MON-001
-    title: "Security metrics monitoring"
+    title: "Security metrics monitoring (auth-failure alert rule)"
     severity: high
     category: operational
-    description: "Monitor authentication failures, ACL denials, and quota violations"
-    requires: [filesystem]
-    condition: "'files' in fs && fs.auth_logger_configured && fs.audit_logger_configured"
-    message: "Security metrics (auth failures, ACL denials) should be monitored via JMX"
-    remediation: "Export kafka.server:type=BrokerTopicMetrics to Prometheus and alert on anomalies"
+    description: "An alerting rule must fire on authentication failures (kafka.network.RequestMetrics, sasl_authentication_failures, etc.)"
+    requires: [alerts, filesystem]
+    condition: "alerts.reachable && alerts.has_auth_failure_rule && 'files' in fs && fs.auth_logger_configured"
+    message: "No auth-failure alert rule found in Prometheus AND no broker-side auth logger configured"
+    remediation: "Add a Prometheus rule on kafka_server_brokertopicmetrics_failed_authentications_total or equivalent; keep kafka.authenticator at INFO+"
     compliance: {pci_dss: ["10.4"], nist: ["AU-6", "SI-4"], cwe: ["778", "223"]}
 
   - id: KAFKA-MON-002
-    title: "Anomaly detection configured"
+    title: "Anomaly detection alert rule"
     severity: medium
     category: operational
-    description: "Implement anomaly detection for connection patterns"
-    requires: [docs, jmx]
-    condition: "docs.monitoring_alerts.exists && 'request_handler_avg_idle_percent' in jmx && jmx.request_handler_avg_idle_percent >= 0.0"
-    message: "Anomaly detection catches unusual connection or consumption patterns"
-    remediation: "Use Prometheus with outlier detection or anomaly detection on kafka metrics"
+    description: "An alerting rule must fire on anomalous broker behavior (stddev/spike/outlier on request rates, connection counts, throughput)"
+    requires: [alerts]
+    condition: "alerts.reachable && alerts.has_anomaly_rule"
+    message: "No anomaly-detection alert rule found in Prometheus"
+    remediation: "Add a Prometheus rule using stddev_over_time / predict_linear / quantile_over_time on broker metrics"
     compliance: {pci_dss: ["10.4"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
 
   - id: KAFKA-MON-003
-    title: "Security alerts configured"
+    title: "Security alerts (auth failures + ACL changes + quota breaches)"
     severity: medium
     category: operational
-    description: "Configure alerts for auth failures, ACL changes, quota breaches"
-    requires: [docs]
-    condition: "docs.monitoring_alerts.exists"
-    message: "Security alerts enable rapid response to potential attacks"
-    remediation: "Set up Prometheus alerts for auth failure rate, ACL deny rate, quota exhaustion"
+    description: "Three alert rules required: auth failures, ACL changes/denials, quota breaches"
+    requires: [alerts]
+    condition: "alerts.reachable && alerts.has_auth_failure_rule && alerts.has_acl_change_rule && alerts.has_quota_breach_rule"
+    message: "Prometheus is missing at least one of: auth-failure / ACL-change / quota-breach alert rules"
+    remediation: "Add Prometheus alert rules covering authentication failures, ACL deny/audit events, and quota throttle-time breaches"
     compliance: {pci_dss: ["10.4"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
 
   - id: KAFKA-MON-004
@@ -1195,14 +1195,14 @@ controls:
     compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
 
   - id: KAFKA-MON-006
-    title: "Replication health monitoring"
+    title: "Replication health alert rule + zero current under-replication"
     severity: high
     category: reliability
-    description: "Alert on under-replicated partitions, offline partitions, controller errors"
-    requires: [docs]
-    condition: "docs.monitoring_alerts.exists && topic_meta.collected && topics.all(t, t.under_replicated_partitions == 0) && topics.all(t, t.offline_partitions == 0)"
-    message: "Under-replicated or offline partitions detected — data durability at risk"
-    remediation: "Configure alerts for under-replicated partitions, offline partitions, and controller changes"
+    description: "An alerting rule must fire on under-replicated/offline partitions, and the live cluster must currently have zero of either"
+    requires: [alerts, adminclient]
+    condition: "alerts.reachable && alerts.has_replication_health_rule && topic_meta.collected && topics.all(t, t.under_replicated_partitions == 0) && topics.all(t, t.offline_partitions == 0)"
+    message: "No replication-health alert rule in Prometheus, or live cluster has under-replicated/offline partitions"
+    remediation: "Add a Prometheus rule on kafka_server_replicamanager_under_replicated_partitions and kafka_controller_kafkacontroller_offline_partitions_count; investigate live URP/offline counts"
     compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
 
   # ═══════════════ KAFKA STREAMS (2) ═══════════════

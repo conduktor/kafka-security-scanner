@@ -84,6 +84,7 @@ public final class PolicyEngine {
             .addVar("schemaregistry", mapStringDyn)
             .addVar("restproxy", mapStringDyn)
             .addVar("docs", mapStringDyn)
+            .addVar("alerts", mapStringDyn)
             .build();
 
         var runtime = CelRuntimeFactory.standardCelRuntimeBuilder().build();
@@ -145,6 +146,7 @@ public final class PolicyEngine {
         activation.put("schemaregistry", collectedData.getOrDefault("schemaregistry", Map.of()));
         activation.put("restproxy", collectedData.getOrDefault("restproxy", Map.of()));
         activation.put("docs", collectedData.getOrDefault("docs", Map.of()));
+        activation.put("alerts", collectedData.getOrDefault("alerts", Map.of()));
 
         List<Finding> findings = new ArrayList<>();
         int passCount = 0;

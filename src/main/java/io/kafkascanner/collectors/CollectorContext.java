@@ -16,6 +16,7 @@ public record CollectorContext(
     @Nullable String schemaRegistryUrl,
     @Nullable String restProxyUrl,
     @Nullable String docsDir,
+    @Nullable String prometheusUrl,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -45,5 +46,9 @@ public record CollectorContext(
 
     public boolean hasDocsDir() {
         return docsDir != null && !docsDir.isBlank();
+    }
+
+    public boolean hasPrometheusUrl() {
+        return prometheusUrl != null && !prometheusUrl.isBlank();
     }
 }
