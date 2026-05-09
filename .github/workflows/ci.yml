@@ -34,23 +34,12 @@ jobs:
       - name: Build distribution
         run: gradle installDist -x test -x check
 
-      - name: Smoke-test scanner against ephemeral Kafka
+      - name: Smoke-test scanner against the test matrix
         run: |
-          docker run -d --name kafka-ci -p 19092:9092 \
-            -e KAFKA_NODE_ID=1 \
-            -e KAFKA_PROCESS_ROLES=broker,controller \
-            -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-ci:9093 \
-            -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093 \
-            -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:19092 \
-            -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
-            -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
-            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
-            -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
-            -e CLUSTER_ID=ci-cluster \
-            apache/kafka:4.0.0
+          # Reuse the same compose definition that test-all-variants.sh validates locally.
+          docker compose -f docker-compose.test-matrix.yaml up -d kafka-42-plaintext
           for i in $(seq 1 60); do nc -z localhost 19092 && break; sleep 1; done
-          sleep 30
-          docker logs kafka-ci 2>&1 | tail -10
+          sleep 15
           ./build/install/kafka-security-scanner/bin/kafka-security-scanner \
             --bootstrap localhost:19092 \
             --policy policies/test-minimal-valid.yaml \
@@ -58,6 +47,7 @@ jobs:
             --out reports \
             --timeout 60 \
             --fail-on none
+          docker compose -f docker-compose.test-matrix.yaml down -v
           test -f reports/report.json
           test -f reports/report.sarif
           test -f reports/report.html
