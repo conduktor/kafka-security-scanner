@@ -4,7 +4,16 @@
 FROM eclipse-temurin:25_36-jdk AS build
 WORKDIR /src
 
-# Cache Gradle dependencies.
+ARG GRADLE_VERSION=9.5.0
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+    && curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
+    && unzip -q /tmp/gradle.zip -d /opt \
+    && ln -s "/opt/gradle-${GRADLE_VERSION}/bin/gradle" /usr/local/bin/gradle \
+    && rm /tmp/gradle.zip \
+    && apt-get purge -y curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY build.gradle settings.gradle gradle.properties ./
 COPY config/ config/
 COPY src/ src/
