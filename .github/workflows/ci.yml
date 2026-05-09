@@ -44,11 +44,12 @@ jobs:
             -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:19092 \
             -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
             -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+            -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
             -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
             -e CLUSTER_ID=ci-cluster \
-            apache/kafka:3.9.0
-          for i in $(seq 1 30); do nc -z localhost 19092 && break; sleep 2; done
-          sleep 10
+            apache/kafka:4.0.0
+          for i in $(seq 1 60); do nc -z localhost 19092 && break; sleep 1; done
+          sleep 15
           ./build/install/kafka-security-scanner/bin/kafka-security-scanner \
             --bootstrap localhost:19092 \
             --policy policies/test-minimal-valid.yaml \
