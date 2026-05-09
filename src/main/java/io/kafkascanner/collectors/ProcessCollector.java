@@ -56,8 +56,46 @@ public final class ProcessCollector implements Collector {
         process.put("kafka_version", parseKafkaVersion(cmdline));
 
         process.putAll(parseLimits(procDir.resolve("limits")));
+        process.putAll(parseStatus(procDir.resolve("status")));
 
         return Map.of("process", process);
+    }
+
+    /** Parse /proc/<pid>/status to extract Uid/Gid (real,effective,saved,fs). */
+    private static Map<String, Object> parseStatus(Path statusFile) {
+        var out = new HashMap<String, Object>();
+        if (!Files.exists(statusFile)) {
+            return out;
+        }
+        try (Stream<String> lines = Files.lines(statusFile)) {
+            lines.forEach(line -> {
+                var lower = line.toLowerCase(java.util.Locale.ROOT);
+                if (lower.startsWith("uid:")) {
+                    var parts = line.trim().split("\\s+");
+                    if (parts.length >= 2) {
+                        try {
+                            out.put("uid", Long.parseLong(parts[1]));
+                            out.put("running_as_root", "0".equals(parts[1]));
+                        } catch (NumberFormatException ignore) {
+                            out.put("uid", -1L);
+                            out.put("running_as_root", false);
+                        }
+                    }
+                } else if (lower.startsWith("gid:")) {
+                    var parts = line.trim().split("\\s+");
+                    if (parts.length >= 2) {
+                        try {
+                            out.put("gid", Long.parseLong(parts[1]));
+                        } catch (NumberFormatException ignore) {
+                            out.put("gid", -1L);
+                        }
+                    }
+                }
+            });
+        } catch (IOException e) {
+            out.put("status_error", e.getMessage());
+        }
+        return out;
     }
 
     private static java.util.Optional<Long> findKafkaPid() {

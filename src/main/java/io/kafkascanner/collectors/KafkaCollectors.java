@@ -124,21 +124,64 @@ public final class KafkaCollectors {
         var topics = admin.listTopics().names().get(timeoutSeconds, TimeUnit.SECONDS);
         var descriptions = admin.describeTopics(topics).allTopicNames().get(timeoutSeconds, TimeUnit.SECONDS);
 
-        return descriptions.entrySet().stream().map(e -> {
+        // Fetch per-topic dynamic configs (retention.ms, cleanup.policy, classification labels).
+        var configResources = topics.stream()
+            .map(t -> new ConfigResource(ConfigResource.Type.TOPIC, t))
+            .toList();
+        Map<ConfigResource, org.apache.kafka.clients.admin.Config> topicConfigs;
+        try {
+            topicConfigs = admin.describeConfigs(configResources)
+                .all().get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            topicConfigs = Map.of();
+        }
+
+        var result = new ArrayList<Map<String, Object>>();
+        for (var e : descriptions.entrySet()) {
             var desc = e.getValue();
             var partitions = desc.partitions();
             var rf = partitions.isEmpty() ? 1 : partitions.get(0).replicas().size();
             var urp = partitions.stream().filter(p -> p.isr().size() < p.replicas().size()).count();
             var offline = partitions.stream().filter(p -> p.leader().id() == -1).count();
 
-            var result = new HashMap<String, Object>();
-            result.put("name", e.getKey());
-            result.put("partitions", (long) partitions.size());
-            result.put("replication_factor", (long) rf);
-            result.put("under_replicated_partitions", urp);
-            result.put("offline_partitions", offline);
-            return result;
-        }).collect(Collectors.toList());
+            var configMap = new HashMap<String, String>();
+            var resource = new ConfigResource(ConfigResource.Type.TOPIC, e.getKey());
+            var cfg = topicConfigs.get(resource);
+            if (cfg != null) {
+                for (var ce : cfg.entries()) {
+                    if (ce.value() != null) {
+                        configMap.put(ce.name(), ce.value());
+                    }
+                }
+            }
+
+            var entry = new HashMap<String, Object>();
+            entry.put("name", e.getKey());
+            entry.put("partitions", (long) partitions.size());
+            entry.put("replication_factor", (long) rf);
+            entry.put("under_replicated_partitions", urp);
+            entry.put("offline_partitions", offline);
+            entry.put("config", configMap);
+            entry.put("min_insync_replicas",
+                parseLongConfig(configMap, "min.insync.replicas", -1L));
+            entry.put("retention_ms",
+                parseLongConfig(configMap, "retention.ms", -2L));
+            entry.put("cleanup_policy",
+                configMap.getOrDefault("cleanup.policy", "delete"));
+            // Convention: operators tag classification via topic config keys
+            // `data.classification` and `data.owner`. We surface them so DATA-* checks
+            // can verify the tag is set, not just believe a separate doc exists.
+            entry.put("classification",
+                configMap.getOrDefault("data.classification", ""));
+            entry.put("owner",
+                configMap.getOrDefault("data.owner", ""));
+            entry.put("has_classification",
+                configMap.containsKey("data.classification")
+                    && !configMap.get("data.classification").isEmpty());
+            entry.put("internal", e.getKey().startsWith("_") || e.getKey().startsWith("__"));
+            result.add(entry);
+        }
+        return result;
     }
 
     static List<Map<String, Object>> collectQuotas(AdminClient admin, int timeoutSeconds) throws Exception {
@@ -180,8 +223,10 @@ public final class KafkaCollectors {
             m.put("principal", acl.entry().principal());
             m.put("host", acl.entry().host());
             m.put("operation", acl.entry().operation().name());
+            m.put("permission_type", acl.entry().permissionType().name());
             m.put("resource_type", acl.pattern().resourceType().name());
             m.put("resource_name", acl.pattern().name());
+            m.put("pattern_type", acl.pattern().patternType().name());
             return Collections.unmodifiableMap(m);
         }).collect(Collectors.toList());
     }
@@ -202,17 +247,54 @@ public final class KafkaCollectors {
         var cluster = admin.describeCluster();
         var nodes = cluster.nodes().get(timeoutSeconds, TimeUnit.SECONDS);
         var controller = cluster.controller().get(timeoutSeconds, TimeUnit.SECONDS);
-        // Detect KRaft vs ZooKeeper. Modern Kafka always advertises a controller node,
-        // and AdminClient's metadata identifies KRaft when listNodes returns the controller
-        // alongside brokers. Without the legacy /controller znode lookup we conservatively
-        // default to "kraft" — Kafka 4.x dropped ZooKeeper anyway. ZK-bound checks become
-        // vacuously true when mode != 'zookeeper'.
-        var mode = "kraft";
+
+        // Detect KRaft vs ZooKeeper from broker config rather than hardcoding.
+        // KRaft brokers expose `process.roles` (broker / controller / broker,controller).
+        // ZooKeeper-mode brokers do not set it, but expose `zookeeper.connect`.
+        var mode = "unknown";
+        long voterCount = -1L;
+        if (!nodes.isEmpty()) {
+            var firstNode = nodes.iterator().next();
+            var configResource = new ConfigResource(
+                ConfigResource.Type.BROKER, String.valueOf(firstNode.id()));
+            try {
+                var configs = admin.describeConfigs(List.of(configResource))
+                    .all().get(timeoutSeconds, TimeUnit.SECONDS).get(configResource);
+                if (configs != null) {
+                    var processRoles = configs.get("process.roles");
+                    var zkConnect = configs.get("zookeeper.connect");
+                    if (processRoles != null && processRoles.value() != null
+                        && !processRoles.value().isEmpty()) {
+                        mode = "kraft";
+                    } else if (zkConnect != null && zkConnect.value() != null
+                        && !zkConnect.value().isEmpty()) {
+                        mode = "zookeeper";
+                    }
+                }
+            } catch (Exception ignored) {
+                // mode stays "unknown"; ZK-bound conditions explicitly handle this.
+            }
+        }
+
+        if ("kraft".equals(mode)) {
+            try {
+                var quorum = admin.describeMetadataQuorum()
+                    .quorumInfo().get(timeoutSeconds, TimeUnit.SECONDS);
+                voterCount = quorum.voters().size();
+            } catch (Exception ignored) {
+                // describeMetadataQuorum needs Kafka 3.4+. Fallback below.
+            }
+        }
+        if (voterCount < 0) {
+            voterCount = nodes.size();
+        }
+
         return Map.of(
             "controller_id", (long) controller.id(),
             "voters", nodes.stream().map(n -> (long) n.id()).toList(),
             "healthy", !nodes.isEmpty(),
             "quorum_size", (long) nodes.size(),
+            "voter_count", voterCount,
             "mode", mode
         );
     }

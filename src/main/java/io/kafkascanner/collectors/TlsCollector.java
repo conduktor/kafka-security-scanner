@@ -61,6 +61,10 @@ public final class TlsCollector implements Collector {
         tls.put("host", host);
         tls.put("port", port);
 
+        // Distinguish "endpoint is plaintext" (we should skip TLS-bound checks) from
+        // "endpoint is TLS but the cert is broken" (real fail). We try a TCP connect
+        // first; if the server doesn't speak TLS we mark plaintext_endpoint=true.
+        tls.put("plaintext_endpoint", false);
         try {
             var ctx = SSLContext.getInstance("TLS");
             ctx.init(null, new TrustManager[] {INSPECTING_TRUST_MANAGER}, null);
@@ -69,7 +73,20 @@ public final class TlsCollector implements Collector {
                 var params = new SSLParameters();
                 params.setServerNames(java.util.List.of(new SNIHostName(host)));
                 socket.setSSLParameters(params);
-                socket.startHandshake();
+                try {
+                    socket.startHandshake();
+                } catch (javax.net.ssl.SSLException sslEx) {
+                    // Plaintext / non-SSL listener returns garbage during handshake.
+                    var msg = String.valueOf(sslEx.getMessage()).toLowerCase(Locale.ROOT);
+                    if (msg.contains("plaintext") || msg.contains("unrecognized")
+                        || msg.contains("not an ssl") || msg.contains("end of file")) {
+                        tls.put("handshake_ok", false);
+                        tls.put("plaintext_endpoint", true);
+                        tls.put("error", sslEx.getClass().getSimpleName() + ": " + sslEx.getMessage());
+                        return Map.of("tls", tls);
+                    }
+                    throw sslEx;
+                }
 
                 var session = socket.getSession();
                 tls.put("handshake_ok", true);

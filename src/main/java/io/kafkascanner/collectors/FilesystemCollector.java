@@ -54,6 +54,10 @@ public final class FilesystemCollector implements Collector {
         if (serverProps != null) {
             fs.put("server_properties", serverProps);
         }
+        var connectProps = readProps(dir.resolve("connect-distributed.properties"));
+        if (connectProps != null) {
+            fs.put("connect_properties", connectProps);
+        }
 
         var files = new HashMap<String, Map<String, Object>>();
         try (Stream<Path> entries = Files.list(dir)) {
@@ -84,8 +88,15 @@ public final class FilesystemCollector implements Collector {
         // Parse log4j properties so AUDIT controls can check logger configuration.
         var log4j = readLog4j(dir);
         fs.put("audit_logger_configured", log4j.contains("kafka.authorizer.logger"));
+        fs.put("auth_logger_configured",
+            log4j.contains("kafka.authenticator")
+                || log4j.contains("kafka.network.RequestChannel$"));
         fs.put("request_logger_configured", log4j.contains("kafka.request.logger"));
         fs.put("controller_logger_configured", log4j.contains("kafka.controller"));
+        fs.put("change_logger_configured",
+            log4j.contains("kafka.zk.KafkaZkClient")
+                || log4j.contains("kafka.controller.KafkaController")
+                || log4j.contains("kafka.server.DynamicBrokerConfig"));
 
         return Map.of("fs", fs);
     }
