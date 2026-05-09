@@ -70,7 +70,9 @@ public final class PolicyEngine {
             .setStandardMacros(CelStandardMacro.STANDARD_MACROS)
             .addVar("brokers", listOfDyn)
             .addVar("topics", listOfDyn)
+            .addVar("topic_meta", mapStringDyn)
             .addVar("acls", listOfDyn)
+            .addVar("acl_meta", mapStringDyn)
             .addVar("quotas", listOfDyn)
             .addVar("cluster", mapStringDyn)
             .addVar("jmx", mapStringDyn)
@@ -129,6 +131,8 @@ public final class PolicyEngine {
         activation.put("brokers", collectedData.getOrDefault("broker", List.of()));
         activation.put("topics", collectedData.getOrDefault("topic", List.of()));
         activation.put("acls", collectedData.getOrDefault("acl", List.of()));
+        activation.put("acl_meta", collectedData.getOrDefault("acl_metadata", Map.of()));
+        activation.put("topic_meta", collectedData.getOrDefault("topic_metadata", Map.of()));
         activation.put("quotas", collectedData.getOrDefault("quota", List.of()));
         activation.put("cluster", collectedData.getOrDefault("kraft", Map.of()));
         activation.put("jmx", collectedData.getOrDefault("jmx", Map.of()));

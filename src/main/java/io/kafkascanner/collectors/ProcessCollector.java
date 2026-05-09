@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Inspects a local Kafka broker JVM process. Reads {@code /proc/<pid>/cmdline},
@@ -53,7 +54,12 @@ public final class ProcessCollector implements Collector {
         process.put("heap_max", heap.getOrDefault("mx", "default"));
 
         process.put("gc_algorithm", parseGcFlag(cmdline));
-        process.put("kafka_version", parseKafkaVersion(cmdline));
+        var version = parseKafkaVersion(cmdline);
+        if (version != null) {
+            process.put("kafka_version", version);
+            process.put("kafka_version_major", parseMajor(version));
+            process.put("kafka_version_minor", parseMinor(version));
+        }
 
         process.putAll(parseLimits(procDir.resolve("limits")));
         process.putAll(parseStatus(procDir.resolve("status")));
@@ -143,7 +149,7 @@ public final class ProcessCollector implements Collector {
         return matcher.find() ? matcher.group(1) : "unknown";
     }
 
-    private static String parseKafkaVersion(String cmdline) {
+    private static @Nullable String parseKafkaVersion(String cmdline) {
         var matcher = KAFKA_JAR.matcher(cmdline);
         if (matcher.find()) {
             var jar = matcher.group();
@@ -152,7 +158,31 @@ public final class ProcessCollector implements Collector {
                 return jar.substring(dash + 1, jar.length() - ".jar".length());
             }
         }
-        return "unknown";
+        return null;
+    }
+
+    private static long parseMajor(String version) {
+        var parts = version.split("\\.");
+        if (parts.length >= 1) {
+            try {
+                return Long.parseLong(parts[0]);
+            } catch (NumberFormatException ignore) {
+                // fall through
+            }
+        }
+        return -1L;
+    }
+
+    private static long parseMinor(String version) {
+        var parts = version.split("\\.");
+        if (parts.length >= 2) {
+            try {
+                return Long.parseLong(parts[1]);
+            } catch (NumberFormatException ignore) {
+                // fall through
+            }
+        }
+        return -1L;
     }
 
     private static Map<String, Object> parseLimits(Path limitsFile) {

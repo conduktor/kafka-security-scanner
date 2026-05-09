@@ -9,6 +9,7 @@ import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Pulls broker MBeans over RMI. Populates the {@code jmx} key on the scan data
@@ -42,36 +43,36 @@ public final class JmxCollector implements Collector {
         var jmx = new HashMap<String, Object>();
         try (JMXConnector conn = JMXConnectorFactory.connect(new JMXServiceURL(url))) {
             var mbsc = conn.getMBeanServerConnection();
-            jmx.put("under_replicated_partitions",
+            putIfPresent(jmx, "under_replicated_partitions",
                 readLong(mbsc, "kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions"));
-            jmx.put("offline_partitions_count",
+            putIfPresent(jmx, "offline_partitions_count",
                 readLong(mbsc, "kafka.controller:type=KafkaController,name=OfflinePartitionsCount"));
-            jmx.put("active_controller_count",
+            putIfPresent(jmx, "active_controller_count",
                 readLong(mbsc, "kafka.controller:type=KafkaController,name=ActiveControllerCount"));
-            jmx.put("request_handler_avg_idle_percent",
+            putIfPresent(jmx, "request_handler_avg_idle_percent",
                 readDouble(mbsc,
                     "kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent"));
-            jmx.put("network_processor_avg_idle_percent",
+            putIfPresent(jmx, "network_processor_avg_idle_percent",
                 readDouble(mbsc,
                     "kafka.network:type=SocketServer,name=NetworkProcessorAvgIdlePercent"));
-            jmx.put("messages_in_per_sec",
+            putIfPresent(jmx, "messages_in_per_sec",
                 readDouble(mbsc, "kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec",
                     "OneMinuteRate"));
-            jmx.put("bytes_in_per_sec",
+            putIfPresent(jmx, "bytes_in_per_sec",
                 readDouble(mbsc, "kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec",
                     "OneMinuteRate"));
-            jmx.put("isr_shrinks_per_sec",
+            putIfPresent(jmx, "isr_shrinks_per_sec",
                 readDouble(mbsc, "kafka.server:type=ReplicaManager,name=IsrShrinksPerSec",
                     "OneMinuteRate"));
-            jmx.put("kafka_version", readString(mbsc,
+            putIfPresent(jmx, "kafka_version", readString(mbsc,
                 "kafka.server:type=app-info", "version"));
-            jmx.put("jvm_heap_used_pct",
+            putIfPresent(jmx, "jvm_heap_used_pct",
                 readHeapPercent(mbsc));
-            jmx.put("jvm_threads_count",
+            putIfPresent(jmx, "jvm_threads_count",
                 readLong(mbsc, "java.lang:type=Threading", "ThreadCount"));
-            jmx.put("os_load_avg",
+            putIfPresent(jmx, "os_load_avg",
                 readDouble(mbsc, "java.lang:type=OperatingSystem", "SystemLoadAverage"));
-            jmx.put("file_descriptor_used_pct",
+            putIfPresent(jmx, "file_descriptor_used_pct",
                 readFileDescriptorPercent(mbsc));
             return Map.of("jmx", jmx);
         } catch (IOException e) {
@@ -80,42 +81,42 @@ public final class JmxCollector implements Collector {
         }
     }
 
-    private static long readLong(MBeanServerConnection mbsc, String beanName) {
+    private static @Nullable Long readLong(MBeanServerConnection mbsc, String beanName) {
         return readLong(mbsc, beanName, "Value");
     }
 
-    private static long readLong(MBeanServerConnection mbsc, String beanName, String attr) {
+    private static @Nullable Long readLong(MBeanServerConnection mbsc, String beanName, String attr) {
         try {
             var raw = mbsc.getAttribute(new ObjectName(beanName), attr);
-            return raw instanceof Number n ? n.longValue() : -1L;
+            return raw instanceof Number n ? n.longValue() : null;
         } catch (Exception e) {
-            return -1L;
+            return null;
         }
     }
 
-    private static double readDouble(MBeanServerConnection mbsc, String beanName) {
+    private static @Nullable Double readDouble(MBeanServerConnection mbsc, String beanName) {
         return readDouble(mbsc, beanName, "Value");
     }
 
-    private static double readDouble(MBeanServerConnection mbsc, String beanName, String attr) {
+    private static @Nullable Double readDouble(MBeanServerConnection mbsc, String beanName, String attr) {
         try {
             var raw = mbsc.getAttribute(new ObjectName(beanName), attr);
-            return raw instanceof Number n ? n.doubleValue() : -1.0;
+            return raw instanceof Number n ? n.doubleValue() : null;
         } catch (Exception e) {
-            return -1.0;
+            return null;
         }
     }
 
-    private static String readString(MBeanServerConnection mbsc, String beanName, String attr) {
+    private static @Nullable String readString(MBeanServerConnection mbsc, String beanName, String attr) {
         try {
             var raw = mbsc.getAttribute(new ObjectName(beanName), attr);
-            return raw == null ? "" : raw.toString();
+            return raw == null ? null : raw.toString();
         } catch (Exception e) {
-            return "";
+            return null;
         }
     }
 
-    private static double readHeapPercent(MBeanServerConnection mbsc) {
+    private static @Nullable Double readHeapPercent(MBeanServerConnection mbsc) {
         try {
             var heap = mbsc.getAttribute(new ObjectName("java.lang:type=Memory"), "HeapMemoryUsage");
             if (heap instanceof javax.management.openmbean.CompositeData cd) {
@@ -128,10 +129,10 @@ public final class JmxCollector implements Collector {
         } catch (Exception e) {
             // fall through
         }
-        return -1.0;
+        return null;
     }
 
-    private static double readFileDescriptorPercent(MBeanServerConnection mbsc) {
+    private static @Nullable Double readFileDescriptorPercent(MBeanServerConnection mbsc) {
         try {
             var os = new ObjectName("java.lang:type=OperatingSystem");
             var open = ((Number) mbsc.getAttribute(os, "OpenFileDescriptorCount")).doubleValue();
@@ -142,7 +143,13 @@ public final class JmxCollector implements Collector {
         } catch (Exception e) {
             // fall through
         }
-        return -1.0;
+        return null;
+    }
+
+    private static void putIfPresent(Map<String, Object> jmx, String key, @Nullable Object value) {
+        if (value != null) {
+            jmx.put(key, value);
+        }
     }
 
     /** Useful for matching beans whose canonical name is case-sensitive. */

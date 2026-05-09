@@ -50,6 +50,29 @@ public final class AdminClientCollector implements Collector {
             putOrLog(data, "kraft", cluster, timeoutSeconds, "kraft");
             putOrLog(data, "quota", quotas, timeoutSeconds, "quota");
         }
+        // Cross-cut metadata so CEL can disambiguate "no ACLs" from "ACL collector failed".
+        @SuppressWarnings("unchecked")
+        var aclList = data.get("acl") instanceof java.util.List<?> l
+            ? (java.util.List<Map<String, Object>>) l
+            : java.util.List.<Map<String, Object>>of();
+        var aclMeta = new java.util.HashMap<String, Object>();
+        aclMeta.put("collected", data.containsKey("acl"));
+        aclMeta.put("count", (long) aclList.size());
+        aclMeta.put("distinct_principal_count", aclList.stream()
+            .map(a -> a.getOrDefault("principal", ""))
+            .distinct()
+            .count());
+        data.put("acl_metadata", aclMeta);
+
+        @SuppressWarnings("unchecked")
+        var topicList = data.get("topic") instanceof java.util.List<?> l
+            ? (java.util.List<Map<String, Object>>) l
+            : java.util.List.<Map<String, Object>>of();
+        var topicMeta = new java.util.HashMap<String, Object>();
+        topicMeta.put("collected", data.containsKey("topic"));
+        topicMeta.put("count", (long) topicList.size());
+        data.put("topic_metadata", topicMeta);
+
         return data;
     }
 

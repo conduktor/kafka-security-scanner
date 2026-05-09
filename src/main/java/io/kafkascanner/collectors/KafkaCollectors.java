@@ -10,6 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ListTopicsOptions;
 import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.quota.ClientQuotaFilter;
@@ -121,7 +122,10 @@ public final class KafkaCollectors {
     }
 
     static List<Map<String, Object>> collectTopics(AdminClient admin, int timeoutSeconds) throws Exception {
-        var topics = admin.listTopics().names().get(timeoutSeconds, TimeUnit.SECONDS);
+        // listInternal(true) so KAFKA-ACL-012 (every internal topic protected) and
+        // similar coverage checks see _consumer_offsets, __transaction_state, etc.
+        var topics = admin.listTopics(new ListTopicsOptions().listInternal(true))
+            .names().get(timeoutSeconds, TimeUnit.SECONDS);
         var descriptions = admin.describeTopics(topics).allTopicNames().get(timeoutSeconds, TimeUnit.SECONDS);
 
         // Fetch per-topic dynamic configs (retention.ms, cleanup.policy, classification labels).
