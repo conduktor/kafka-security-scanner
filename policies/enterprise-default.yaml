@@ -892,13 +892,14 @@ controls:
     compliance: {pci_dss: ["3.4"], nist: ["SC-28", "SC-13"], cwe: ["311", "312"]}
 
   - id: KAFKA-DATA-002
-    title: "External key management system"
+    title: "External key management system (placeholder + provider class)"
     severity: high
     category: security
-    description: "Use dedicated KMS (Vault, AWS KMS, Azure Key Vault) for encryption keys"
-    condition: "brokers.all(b, 'config' in b && 'config.providers' in b.config && b.config['config.providers'].size() > 0 && b.config.exists(k, k.startsWith('config.providers.') && k.endsWith('.class') && (b.config[k].contains('Vault') || b.config[k].contains('AwsSecrets') || b.config[k].contains('AzureKeyVault') || b.config[k].contains('GcpSecret') || b.config[k].contains('SecretsManager'))))"
-    message: "Encryption keys should be stored in a dedicated KMS, not in application config"
-    remediation: "Integrate HashiCorp Vault, AWS KMS, or Azure Key Vault"
+    description: "Sensitive broker configs must be resolved through a non-file/env config provider (Vault, AWS Secrets Manager, GCP, Azure Key Vault)"
+    requires: [adminclient]
+    condition: "kms.placeholders_found > 0 && kms.has_external_provider"
+    message: "No external KMS provider in use, or no broker config value pulled from one"
+    remediation: "Wire VaultConfigProvider / AwsSecretsManagerConfigProvider; reference secrets via ${vault:...} or ${aws:...}"
     compliance: {pci_dss: ["3.5", "3.6"], nist: ["SC-12", "SC-17"], cwe: ["321"]}
 
   - id: KAFKA-DATA-003
@@ -1063,25 +1064,26 @@ controls:
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["306", "862"]}
 
   - id: KAFKA-OPS-005
-    title: "Encrypted Kafka backups"
+    title: "Encrypted Kafka backups (config provider in use)"
     severity: medium
     category: operational
-    description: "Encrypt backups of Kafka data and configurations"
-    requires: [docs]
-    condition: "docs.backup_encryption.exists && brokers.all(b, 'config' in b && 'config.providers' in b.config && b.config['config.providers'].size() > 0)"
+    description: "Backup encryption keys must come from an external config provider (so the operator can rotate without touching disk-level properties)"
+    requires: [adminclient]
+    condition: "kms.has_external_provider && kms.placeholders_found > 0"
     covered_by_kafka_flavor: [confluent-cloud, aws-msk, aiven, redpanda-cloud]
-    message: "Kafka data and config backups must be encrypted at rest"
-    remediation: "Encrypt backup storage with AES-256 and restrict access"
+    message: "Kafka backups rely on inline credentials — no external KMS is wired into broker configs"
+    remediation: "Encrypt backup storage with AES-256; pull the key via ${vault:...} or ${aws:...} so rotation is centralised"
     compliance: {pci_dss: ["3.4"], nist: ["CP-9", "SC-28"], cwe: ["311", "312"]}
 
   - id: KAFKA-OPS-006
-    title: "Config providers for secrets"
+    title: "Config providers protect every sensitive key"
     severity: high
     category: security
-    description: "Use config.providers to externalize sensitive configs from broker properties"
-    condition: "brokers.all(b, 'config' in b && 'config.providers' in b.config && b.config['config.providers'].size() > 0) && brokers.exists(b, b.config.exists(k, b.config[k].contains('${') && b.config[k].contains('}')))"
-    message: "Sensitive configs (passwords, keystore passwords) should be externalized"
-    remediation: "Use config.providers with FileConfigProvider or VaultConfigProvider"
+    description: "sasl.jaas.config, ssl.keystore.password, ssl.key.password, ssl.truststore.password (and the kafkastore.* equivalents) must each resolve through a config provider on at least one broker"
+    requires: [adminclient]
+    condition: "kms.placeholders_found > 0 && size(kms.sensitive_keys_via_provider) > 0"
+    message: "At least one sensitive config (sasl.jaas.config / ssl.*.password) is plaintext — no ${provider:path} placeholder found"
+    remediation: "Set config.providers and use ${vault:...} / ${file:...} on sasl.jaas.config and every ssl.*.password"
     compliance: {pci_dss: ["3.4"], nist: ["IA-5", "SC-28"], cwe: ["522", "798", "312"]}
 
   - id: KAFKA-OPS-007

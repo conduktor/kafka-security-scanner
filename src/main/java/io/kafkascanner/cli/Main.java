@@ -233,7 +233,14 @@ public final class Main implements Runnable {
                         .collect(java.util.stream.Collectors.joining(",")) + ")...");
                 var outcome = CollectorRunner.run(collectors, ctx);
 
-                var brokerData = outcome.data().get("broker");
+                // KMS is a derivation collector: it walks the data already
+                // returned by every source collector and emits `kms.*`. Always
+                // run it last so policies can reference it without ordering bugs.
+                var enrichedData = io.kafkascanner.collectors.KmsCollector.aggregate(outcome.data());
+                var allCollectorsRan = new java.util.LinkedHashSet<>(outcome.ran());
+                allCollectorsRan.add("kms");
+
+                var brokerData = enrichedData.get("broker");
                 if (brokerData == null
                     || (brokerData instanceof java.util.List<?> bl && bl.isEmpty())) {
                     System.err.println("Scan error: no broker data collected (cluster unreachable?)");
@@ -242,8 +249,8 @@ public final class Main implements Runnable {
 
                 System.out.println("Evaluating " + engine.policy().controls().size() + " controls...");
                 var displayName = clusterName.isBlank() ? bootstrap : clusterName;
-                var result = engine.evaluate(outcome.data(), displayName,
-                    detection.flavor(), detection.source(), outcome.ran());
+                var result = engine.evaluate(enrichedData, displayName,
+                    detection.flavor(), detection.source(), allCollectorsRan);
 
                 printTerminal(result);
 
