@@ -1,0 +1,134 @@
+# kafka-security-scanner policy — test-minimal-valid
+name: test-minimal-valid
+version: "2.3.0"
+description: Minimal policy for quick baseline scans (CEL conditions evaluated by cel-java)
+
+controls:
+  - id: SEC-001
+    title: "Broker TLS encryption is enabled"
+    severity: critical
+    category: security
+    description: "All listeners must use SSL or SASL_SSL protocol"
+    condition: "brokers.all(b, b.listeners.all(l, l.protocol in ['SSL', 'SASL_SSL']))"
+    message: "One or more listeners use PLAINTEXT"
+    remediation: "Configure listeners with SSL:// or SASL_SSL:// protocol"
+    compliance:
+      pci_dss: ["3.4", "4.1"]
+      soc2: ["CC6.1"]
+
+  - id: SEC-002
+    title: "SASL authentication is enabled"
+    severity: high
+    category: security
+    description: "Brokers must require SASL authentication"
+    condition: "brokers.all(b, 'sasl' in b && b.sasl.enabled)"
+    message: "No SASL mechanism configured"
+    remediation: "Enable SASL_SSL with SCRAM-SHA-512"
+    compliance:
+      pci_dss: ["7.2.1"]
+      soc2: ["CC6.1"]
+
+  - id: SEC-004
+    title: "No wildcard ACLs"
+    severity: high
+    category: security
+    description: "ACL entries must not use wildcard (*) principals or hosts"
+    condition: "acls.filter(a, a.principal == '*' || a.host == '*').size() == 0"
+    message: "Wildcard ACLs grant unrestricted access"
+    remediation: "Replace wildcard ACLs with specific principals"
+    compliance:
+      pci_dss: ["7.2.1"]
+
+  - id: SEC-008
+    title: "Inter-broker encryption enabled"
+    severity: critical
+    category: security
+    description: "Inter-broker traffic must be encrypted"
+    condition: "brokers.all(b, 'config' in b && 'security.inter.broker.protocol' in b.config && b.config['security.inter.broker.protocol'] in ['SSL', 'SASL_SSL'])"
+    message: "Inter-broker communication is not encrypted"
+    remediation: "Set security.inter.broker.protocol=SSL"
+    compliance:
+      pci_dss: ["3.4"]
+
+  - id: SEC-011
+    title: "Auto topic creation disabled"
+    severity: medium
+    category: security
+    description: "Auto topic creation should be disabled in production"
+    condition: "brokers.all(b, 'config' in b && 'auto.create.topics.enable' in b.config && b.config['auto.create.topics.enable'] == 'false')"
+    message: "Auto topic creation is enabled"
+    remediation: "Set auto.create.topics.enable=false"
+
+  - id: REL-001
+    title: "Min ISR configured"
+    severity: high
+    category: reliability
+    description: "min.insync.replicas must be at least 2"
+    condition: "brokers.all(b, b.min_insync_replicas >= 2)"
+    message: "min.insync.replicas is below 2 — risk of data loss"
+    remediation: "Set min.insync.replicas=2"
+
+  - id: REL-003
+    title: "Unclean leader election disabled"
+    severity: critical
+    category: reliability
+    description: "Unclean leader election must be disabled"
+    condition: "brokers.all(b, !('config' in b && 'unclean.leader.election.enable' in b.config) || b.config['unclean.leader.election.enable'] == 'false')"
+    message: "Unclean leader election is enabled — data loss risk"
+    remediation: "Set unclean.leader.election.enable=false"
+    compliance:
+      pci_dss: ["10.5"]
+
+  - id: REL-004
+    title: "Topics have adequate replication"
+    severity: high
+    category: reliability
+    description: "All topics must have replication factor >= 2"
+    condition: "topics.all(t, t.replication_factor >= 2)"
+    message: "Topics with replication factor < 2 found"
+    remediation: "Increase replication factor for affected topics"
+
+  - id: REL-005
+    title: "No under-replicated partitions"
+    severity: high
+    category: reliability
+    description: "All partitions fully replicated"
+    condition: "topics.all(t, t.under_replicated_partitions == 0)"
+    message: "Under-replicated partitions detected"
+    remediation: "Check broker health and network connectivity"
+
+  - id: REL-006
+    title: "No offline partitions"
+    severity: critical
+    category: reliability
+    description: "All topic partitions must be online"
+    condition: "topics.all(t, t.offline_partitions == 0)"
+    message: "Offline partitions found — data unavailable"
+    remediation: "Restart affected brokers"
+
+  - id: OBS-002
+    title: "Kafka version is supported"
+    severity: medium
+    category: operational
+    description: "Kafka version must be 2.8+"
+    condition: "true"
+    message: "Kafka version check not yet implemented — kafka_version_gte function pending"
+    remediation: "Upgrade to Kafka 3.7+"
+
+  - id: CMP-001
+    title: "Disk usage below 85%"
+    severity: high
+    category: operational
+    description: "Broker disk usage must stay below 85%"
+    condition: "brokers.all(b, !('metrics' in b && 'disk_usage_percent' in b.metrics) || b.metrics['disk_usage_percent'] < 85.0)"
+    message: "Broker disk usage above 85%"
+    remediation: "Add storage or reduce retention"
+
+scoring:
+  weights:
+    critical: 15
+    high: 10
+    medium: 5
+    low: 2
+    info: 0
+  pass_threshold: 70

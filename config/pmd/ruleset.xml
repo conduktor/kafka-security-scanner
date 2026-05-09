@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<ruleset name="kafka-scanner"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>PMD ruleset for kafka-security-scanner CLI.</description>
+
+    <rule ref="category/java/errorprone.xml">
+        <!-- Records hold Map fields legitimately; PMD over-fires. -->
+        <exclude name="AvoidFieldNameMatchingMethodName"/>
+        <!-- Tests/CLI use literal 0, 1, 2 etc.; not actionable. -->
+        <exclude name="AvoidLiteralsInIfCondition"/>
+        <!-- Records with @JsonProperty fields trigger this falsely. -->
+        <exclude name="MissingStaticMethodInNonInstantiatableClass"/>
+        <!-- Conflicts with virtual-thread executor try-with-resources patterns. -->
+        <exclude name="CloseResource"/>
+    </rule>
+
+    <rule ref="category/java/bestpractices.xml">
+        <!-- CLI tool: System.out/err IS the output channel. -->
+        <exclude name="SystemPrintln"/>
+        <!-- Records expose Map<K,V>; that IS the interface. Rule misfires on records. -->
+        <exclude name="LooseCoupling"/>
+        <!-- We use Map<String,Object> bags by design for CEL activation. -->
+        <exclude name="UseVarargs"/>
+        <exclude name="AvoidReassigningParameters"/>
+    </rule>
+
+    <rule ref="category/java/security.xml"/>
+</ruleset>

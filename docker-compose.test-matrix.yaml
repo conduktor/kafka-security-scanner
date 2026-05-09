@@ -1,0 +1,157 @@
+# Kafka Security Scanner — Deep E2E Test Matrix
+# Covers Apache Kafka (4 variants) + Redpanda (2 variants)
+
+services:
+  # ═══════════════ APACHE KAFKA ═══════════════
+
+  # Variant 1: Kafka 4.2 KRaft — PLAINTEXT (insecure baseline)
+  kafka-42-plaintext:
+    image: apache/kafka:4.2.0
+    hostname: kafka42-plaintext
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka42-plaintext:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: kafka42-plaintext
+    ports: ["19092:9092"]
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "9092"]
+      interval: 5s
+      retries: 20
+
+  # Variant 2: Kafka 4.2 KRaft — SASL_PLAINTEXT + PLAIN (secured, inline JAAS)
+  kafka-42-sasl:
+    image: apache/kafka:4.2.0
+    hostname: kafka42-sasl
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka42-sasl:9093
+      KAFKA_LISTENERS: SASL_PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_OPTS: '-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_SUPER_USERS: "User:admin"
+      CLUSTER_ID: kafka42-sasl-cluster
+    volumes:
+      - ./secrets:/etc/kafka/secrets:ro
+    ports: ["29092:9092"]
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "9092"]
+      interval: 5s
+      retries: 20
+
+  # Variant 3: Kafka 3.9 KRaft — PLAINTEXT (older version)
+  # NOTE: 3.9 StorageTool validates advertised.listeners against ALL listeners
+  # (fixed in 4.x). CONTROLLER must bind to a routable hostname, not 0.0.0.0.
+  kafka-39-plaintext:
+    image: apache/kafka:3.9.0
+    hostname: kafka39-plaintext
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka39-plaintext:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://kafka39-plaintext:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:39092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: kafka39-plaintext
+    ports: ["39092:9092"]
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "9092"]
+      interval: 5s
+      retries: 20
+
+  # Variant 4: Kafka 4.2 with ACLs + StandardAuthorizer
+  kafka-42-acl:
+    image: apache/kafka:4.2.0
+    hostname: kafka42-acl
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka42-acl:9093
+      KAFKA_LISTENERS: SASL_PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://localhost:49092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_OPTS: '-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf'
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      # ANONYMOUS is required because CONTROLLER listener is PLAINTEXT (intra-cluster).
+      KAFKA_SUPER_USERS: "User:admin;User:ANONYMOUS"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: kafka42-acl-cluster
+    volumes:
+      - ./secrets:/etc/kafka/secrets:ro
+    ports: ["49092:9092"]
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "9092"]
+      interval: 5s
+      retries: 20
+
+  # ═══════════════ REDPANDA ═══════════════
+
+  # Variant 5: Redpanda latest — PLAINTEXT
+  redpanda-plaintext:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    hostname: redpanda-plaintext
+    command:
+      - redpanda start
+      - --smp 1
+      - --overprovisioned
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://localhost:59092
+      - --pandaproxy-addr 0.0.0.0:8082
+      - --mode dev-container
+    ports: ["59092:9092"]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 5s
+      retries: 20
+
+  # Variant 6: Redpanda latest — SASL_PLAINTEXT + SCRAM-SHA-256
+  # Cluster-level properties (enable_sasl, sasl_mechanisms, etc.) must come from
+  # a bootstrap yaml — `--set redpanda.*` only handles node config.
+  redpanda-sasl:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    hostname: redpanda-sasl
+    environment:
+      RP_BOOTSTRAP_USER: "admin:admin-secret:SCRAM-SHA-256"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        cp /tmp/redpanda.yaml /etc/redpanda/redpanda.yaml &&
+        exec /entrypoint.sh redpanda start --smp 1 --overprovisioned --pandaproxy-addr 0.0.0.0:8082 --mode dev-container
+    volumes:
+      - ./secrets/redpanda.yaml:/tmp/redpanda.yaml:ro
+      - ./secrets/redpanda-bootstrap.yaml:/etc/redpanda/.bootstrap.yaml:ro
+    ports: ["65093:9092"]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 5s
+      retries: 20

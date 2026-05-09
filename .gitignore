@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+.gradle/
+out/
+*.class
+
+# Reports produced by `gradle run` or `scripts/test-all-variants.sh`
+reports/
+
+# Logs
+*.log
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local Gradle wrapper jar caches
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local env
+.env
+.env.local

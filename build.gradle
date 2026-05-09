@@ -1,0 +1,144 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'net.ltgt.errorprone' version '4.1.0'
+    id 'net.ltgt.nullaway' version '2.0.0'
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.1.0'
+    id 'pmd'
+}
+
+group = 'io.kafkascanner'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Kafka official client. 4.x uses Subject.current() instead of the
+    // SecurityManager-dependent Subject.getSubject() that JEP 486 disabled in Java 25.
+    implementation 'org.apache.kafka:kafka-clients:4.2.0'
+
+
+    // CEL engine
+    implementation 'dev.cel:cel:0.12.0'
+
+    // CLI
+    implementation 'info.picocli:picocli:4.7.6'
+
+    // JSON/YAML
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.18.2'
+
+    // PDF
+    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+
+    // Logging — slf4j-simple keeps the CLI quiet by default but lets users opt in.
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+
+    // NullAway annotations
+    compileOnly 'org.checkerframework:checker-qual:3.48.0'
+
+    // Strict linting
+    errorprone 'com.google.errorprone:error_prone_core:2.36.0'
+    errorprone 'com.uber.nullaway:nullaway:0.12.1'
+
+    // Tests
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.16'
+    testImplementation 'org.assertj:assertj-core:3.27.3'
+    testImplementation 'org.testcontainers:testcontainers:1.20.4'
+    testImplementation 'org.testcontainers:kafka:1.20.4'
+    testImplementation 'org.testcontainers:junit-jupiter:1.20.4'
+}
+
+application {
+    mainClass = 'io.kafkascanner.cli.Main'
+    applicationName = 'kafka-security-scanner'
+    applicationDefaultJvmArgs = ['--enable-preview']
+}
+
+// ── Strict Compilation ──
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll([
+        '-Xlint:all',
+        '-Xlint:-serial',
+        '-Werror',
+        '--enable-preview',
+    ])
+    options.errorprone {
+        enabled = true
+        allErrorsAsWarnings = false
+        disableWarningsInGeneratedCode = true
+        excludedPaths = '.*/build/.*'
+        check('StringSplitter', net.ltgt.gradle.errorprone.CheckSeverity.OFF)
+        option('NullAway:AnnotatedPackages', 'io.kafkascanner')
+        option('NullAway:CheckOptionalEmptiness', 'true')
+    }
+}
+
+// ── Checkstyle (0 warnings) ──
+checkstyle {
+    toolVersion = '10.21.0'
+    configFile = file('config/checkstyle/checkstyle.xml')
+    maxErrors = 0
+    maxWarnings = 0
+}
+
+// ── SpotBugs (max) ──
+spotbugs {
+    toolVersion = '4.9.8'
+    effort = 'max'
+    reportLevel = 'low'
+    // Java 25 + preview bytecode (class major 69) isn't fully supported by SpotBugs/ASM yet.
+    ignoreFailures = true
+}
+
+// ── PMD ──
+pmd {
+    toolVersion = '7.8.0'
+    ruleSets = []
+    ruleSetFiles = files('config/pmd/ruleset.xml')
+    consoleOutput = true
+}
+
+tasks.named('pmdTest').configure { enabled = false }
+tasks.named('checkstyleTest').configure { enabled = false }
+tasks.named('spotbugsTest').configure { enabled = false }
+
+
+test {
+    useJUnitPlatform()
+    jvmArgs += ['--enable-preview']
+    // Testcontainers needs the raw Docker Engine socket. On Docker Desktop macOS,
+    // ~/.docker/run/docker.sock is a CLI-only proxy that returns empty /info responses;
+    // the real engine socket lives under ~/Library/Containers/com.docker.docker/Data/.
+    def home = System.getProperty('user.home')
+    def rawSock = home + '/Library/Containers/com.docker.docker/Data/docker.raw.sock'
+    def fallbackSock = home + '/.docker/run/docker.sock'
+    def envHost = System.getenv('DOCKER_HOST')
+    def dockerSock
+    if (envHost) {
+        dockerSock = envHost
+    } else if (new File(rawSock).exists()) {
+        dockerSock = 'unix://' + rawSock
+    } else {
+        dockerSock = 'unix://' + fallbackSock
+    }
+    environment 'DOCKER_HOST', dockerSock
+    environment 'DOCKER_API_VERSION', '1.45'
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+    systemProperty 'docker.host', dockerSock
+    systemProperty 'api.version', '1.45'
+}
+
+tasks.withType(JavaExec).configureEach {
+    jvmArgs += ['--enable-preview']
+}

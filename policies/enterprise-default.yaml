@@ -1,0 +1,1205 @@
+# kafka-security-scanner policy — enterprise-default (118 controls)
+# Sourced from https://github.com/conduktor/kafka-security-controls — that repo
+# is the canonical home for the regulatory mappings (CWE, NIST 800-53,
+# PCI-DSS 4.0, SOC2, ISO 27001). This file is the executable CEL projection.
+# CEL conditions evaluated by cel-java.
+# Controls requiring Connect/Schema Registry/REST/MM2/Streams collectors are marked [ecosystem].
+
+name: enterprise-default
+version: "3.0.0"
+description: "Full compliance policy: 118 controls mapped to PCI-DSS 4.0, SOC 2, ISO 27001, NIST 800-53, CIS"
+framework: "PCI-DSS 4.0, SOC 2 Type II, ISO/IEC 27001, NIST 800-53"
+
+controls:
+  # ═══════════════ AUTHENTICATION (14) ═══════════════
+  - &KAFKA-AUTH-001
+    id: KAFKA-AUTH-001
+    title: "SASL/SCRAM configured for client authentication"
+    severity: high
+    category: security
+    description: "Enable SASL/SCRAM-SHA-256 or SASL/SCRAM-SHA-512 for client authentication"
+    condition: "brokers.all(b, 'sasl' in b && b.sasl.enabled && b.sasl.mechanisms.exists(m, m in ['SCRAM-SHA-256', 'SCRAM-SHA-512']))"
+    message: "SASL/SCRAM is not configured — clients can connect without authentication"
+    remediation: "Configure sasl.mechanism and sasl.jaas.config on brokers and clients"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-AUTH-004
+    title: "SASL/PLAIN must be paired with TLS"
+    severity: high
+    category: security
+    description: "SASL/PLAIN must only be used with TLS (SASL_SSL protocol). Prefer SCRAM-SHA-256/512"
+    condition: "brokers.all(b, !('sasl' in b) || !b.sasl.enabled || !('PLAIN' in b.sasl.mechanisms) || b.listeners.all(l, l.protocol == 'SASL_SSL'))"
+    message: "SASL/PLAIN used without TLS — credentials sent in cleartext"
+    remediation: "Use SASL_SSL protocol or switch to SCRAM-SHA-512"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-5", "SC-8"], cwe: ["319", "522"]}
+
+  - id: KAFKA-AUTH-005
+    title: "mTLS client certificate authentication"
+    severity: high
+    category: security
+    description: "Implement mutual TLS where clients present certificates signed by a trusted CA"
+    condition: "brokers.all(b, 'tls' in b && b.tls.enabled)"
+    message: "mTLS not configured — client certificate auth provides strongest identity verification"
+    remediation: "Configure ssl.client.auth=required on brokers"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5", "SC-17"], cwe: ["287", "295", "297"]}
+
+  - id: KAFKA-AUTH-006
+    title: "SCRAM credential rotation configured"
+    severity: medium
+    category: security
+    description: "Implement regular rotation of SCRAM credentials"
+    condition: "brokers.all(b, 'sasl' in b && b.sasl.enabled && b.sasl.mechanisms.exists(m, m.startsWith('SCRAM')))"
+    message: "SCRAM credentials should be rotated regularly — document rotation procedure"
+    remediation: "Rotate SCRAM credentials via kafka-configs.sh every 90 days"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-5"], cwe: ["798", "522"]}
+
+  - id: KAFKA-AUTH-007
+    title: "Certificate rotation before expiry"
+    severity: high
+    category: security
+    description: "Implement automated certificate rotation before expiry. Kafka 2.5+ supports dynamic keystore updates"
+    condition: "brokers.all(b, 'tls' in b && b.tls.enabled)"
+    message: "Ensure certificate rotation is automated — expired certs cause outages"
+    remediation: "Use short-lived certificates and automate rotation. Kafka 2.5+ supports dynamic SSL updates"
+    compliance: {pci_dss: ["4.1"], nist: ["IA-5", "SC-12"], cwe: ["324"]}
+
+  - id: KAFKA-AUTH-008
+    title: "SASL for inter-broker communication"
+    severity: high
+    category: security
+    description: "Configure SASL for inter-broker communication"
+    condition: "brokers.all(b, 'config' in b && 'sasl.mechanism.inter.broker.protocol' in b.config)"
+    message: "Inter-broker SASL not configured"
+    remediation: "Set security.inter.broker.protocol=SASL_SSL and sasl.mechanism.inter.broker.protocol"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-AUTH-009
+    title: "SASL mechanism allowlist configured"
+    severity: medium
+    category: security
+    description: "Restrict enabled SASL mechanisms to only required ones"
+    condition: "brokers.all(b, 'config' in b && 'sasl.enabled.mechanisms' in b.config)"
+    message: "SASL mechanism allowlist not explicitly configured"
+    remediation: "Set sasl.enabled.mechanisms to only required mechanisms (e.g. SCRAM-SHA-512)"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-AUTH-010
+    title: "SSL principal mapping rules configured"
+    severity: medium
+    category: security
+    description: "Configure ssl.principal.mapping.rules to map certificate DNs to canonical principals"
+    condition: "true"
+    message: "SSL principal mapping rules should be configured for mTLS environments"
+    remediation: "Set ssl.principal.mapping.rules to prevent ambiguous identity mapping"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2"], cwe: ["287", "295"]}
+
+  - id: KAFKA-AUTH-011
+    title: "OAuth token lifetime enforcement"
+    severity: medium
+    category: security
+    description: "Use short-lived OAuth/OIDC tokens for SASL/OAUTHBEARER"
+    condition: "true"
+    message: "If using OAuth, ensure short-lived tokens with audience/issuer validation"
+    remediation: "Configure token lifetime < 1 hour and validate issuer/audience"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-5", "IA-8"], cwe: ["287", "522"]}
+
+  - id: KAFKA-AUTH-012
+    title: "Per-tenant principals configured"
+    severity: medium
+    category: security
+    description: "Use unique principals and client IDs per application or tenant"
+    condition: "true"
+    message: "Ensure unique principals per application for audit and quota isolation"
+    remediation: "Assign unique service accounts per application/tenant"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-AUTH-013
+    title: "Delegation tokens for long-running apps"
+    severity: medium
+    category: security
+    description: "Use delegation tokens for Kafka Streams, Spark, Flink to avoid storing credentials"
+    condition: "true"
+    message: "Delegation tokens should be used for long-running stream processors"
+    remediation: "Configure delegation.token.master.key and use kafka-delegation-tokens.sh"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-5", "IA-2"], cwe: ["287", "522"]}
+
+  - id: KAFKA-AUTH-014
+    title: "Connection re-authentication enforced"
+    severity: medium
+    category: security
+    description: "Force periodic re-authentication using connections.max.reauth.ms"
+    condition: "brokers.all(b, 'config' in b && 'connections.max.reauth.ms' in b.config)"
+    message: "Connection re-authentication not configured — compromised credentials persist"
+    remediation: "Set connections.max.reauth.ms to enforce periodic re-auth (Kafka 2.2+)"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-5", "IA-11"], cwe: ["287", "613"]}
+
+  # ═══════════════ ENCRYPTION (11) ═══════════════
+  - id: KAFKA-ENC-001
+    title: "Inter-broker TLS encryption enabled"
+    severity: critical
+    category: security
+    description: "Enable TLS encryption between brokers"
+    condition: "brokers.all(b, 'config' in b && 'security.inter.broker.protocol' in b.config && b.config['security.inter.broker.protocol'] in ['SSL', 'SASL_SSL'])"
+    message: "Inter-broker communication is not encrypted — replication traffic exposed"
+    remediation: "Set security.inter.broker.protocol=SSL or SASL_SSL"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-ENC-002
+    title: "Client-broker TLS encryption enabled"
+    severity: critical
+    category: security
+    description: "All client-facing listeners must use SSL or SASL_SSL protocol"
+    condition: "brokers.all(b, b.listeners.all(l, l.protocol in ['SSL', 'SASL_SSL']))"
+    message: "One or more client listeners use PLAINTEXT — data exposed in transit"
+    remediation: "Configure listeners with SSL:// or SASL_SSL:// protocol"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-ENC-003
+    title: "ZooKeeper TLS enabled"
+    severity: high
+    category: security
+    description: "Enable TLS for broker-to-ZooKeeper communication"
+    condition: "cluster.mode != 'zookeeper' || brokers.all(b, 'config' in b && 'zookeeper.ssl.client.enable' in b.config && b.config['zookeeper.ssl.client.enable'] == 'true')"
+    message: "ZooKeeper communication is not encrypted"
+    remediation: "Set zookeeper.ssl.client.enable=true"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-ENC-004
+    title: "Disk encryption for log directories"
+    severity: high
+    category: security
+    description: "Enable filesystem-level encryption for Kafka log directories"
+    condition: "true"
+    message: "Verify disk encryption (dm-crypt/LUKS/cloud KMS) is enabled on log.dirs"
+    remediation: "Use dm-crypt, LUKS, or cloud provider encryption for log directories"
+    compliance: {pci_dss: ["3.4"], nist: ["SC-28"], cwe: ["311", "312"]}
+
+  - id: KAFKA-ENC-005
+    title: "TLS protocol version >= 1.2 enforced"
+    severity: high
+    category: security
+    description: "Enforce TLS 1.2 or 1.3 minimum. Disable SSLv3, TLS 1.0, 1.1"
+    condition: "brokers.all(b, 'config' in b && 'ssl.enabled.protocols' in b.config && !b.config['ssl.enabled.protocols'].contains('TLSv1.0') && !b.config['ssl.enabled.protocols'].contains('TLSv1.1'))"
+    message: "Older TLS versions (1.0/1.1) may be enabled — vulnerable to POODLE/BEAST"
+    remediation: "Set ssl.enabled.protocols=TLSv1.2,TLSv1.3"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["326", "327"]}
+
+  - id: KAFKA-ENC-006
+    title: "Strong cipher suites configured"
+    severity: medium
+    category: security
+    description: "Configure strong AEAD cipher suites (GCM, ChaCha20-Poly1305)"
+    condition: "brokers.all(b, 'config' in b && 'ssl.cipher.suites' in b.config)"
+    message: "Cipher suites not explicitly configured — may use weak defaults"
+    remediation: "Set ssl.cipher.suites to TLS_AES_256_GCM_SHA384 and other AEAD ciphers"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["326", "327"]}
+
+  - id: KAFKA-ENC-007
+    title: "CA certificate validation configured"
+    severity: high
+    category: security
+    description: "Configure ssl.truststore with trusted CA certificates"
+    condition: "brokers.all(b, 'config' in b && 'ssl.truststore.location' in b.config)"
+    message: "Truststore not configured — certificates not validated"
+    remediation: "Set ssl.truststore.location and ssl.truststore.password"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-17", "SC-12"], cwe: ["295", "296", "297"]}
+
+  - id: KAFKA-ENC-008
+    title: "Hostname verification enabled"
+    severity: medium
+    category: security
+    description: "Enable ssl.endpoint.identification.algorithm=https"
+    condition: "brokers.all(b, 'config' in b && (!('ssl.endpoint.identification.algorithm' in b.config) || b.config['ssl.endpoint.identification.algorithm'] == 'https' || b.config['ssl.endpoint.identification.algorithm'] == ''))"
+    message: "Hostname verification not enabled — vulnerable to MITM"
+    remediation: "Set ssl.endpoint.identification.algorithm=https"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-17"], cwe: ["295", "297"]}
+
+  - id: KAFKA-ENC-009
+    title: "Certificate revocation checking enabled"
+    severity: medium
+    category: security
+    description: "Enable CRL/OCSP checking via JVM properties"
+    condition: "true"
+    message: "CRL/OCSP checking should be enabled via JVM: -Dcom.sun.net.ssl.checkRevocation=true"
+    remediation: "Add -Dcom.sun.net.ssl.checkRevocation=true -Dcom.sun.security.enableCRLDP=true"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-17", "IA-5"], cwe: ["295", "297"]}
+
+  - id: KAFKA-ENC-010
+    title: "Dynamic SSL reconfiguration enabled"
+    severity: low
+    category: security
+    description: "Use dynamic broker configuration (Kafka 2.5+) for zero-downtime cert rotation"
+    condition: "true"
+    message: "Dynamic SSL config enables zero-downtime certificate rotation"
+    remediation: "Use kafka-configs.sh --alter for dynamic SSL updates (Kafka 2.5+)"
+    compliance: {pci_dss: ["3.6"], nist: ["SC-12", "CM-3"], cwe: ["324"]}
+
+  # ═══════════════ AUTHORIZATION / ACLs (15) ═══════════════
+  - id: KAFKA-ACL-001
+    title: "Topic read ACLs configured"
+    severity: high
+    category: security
+    description: "Restrict topic read access with explicit ACLs"
+    condition: "acls.size() > 0"
+    message: "No ACLs configured — all users can read all topics"
+    remediation: "Use kafka-acls.sh --operation Read to restrict topic read access"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
+
+  - id: KAFKA-ACL-002
+    title: "Topic write ACLs configured"
+    severity: high
+    category: security
+    description: "Restrict topic write access with explicit ACLs"
+    condition: "acls.filter(a, a.operation == 'WRITE').size() > 0"
+    message: "No write ACLs configured — unauthorized data injection possible"
+    remediation: "Use kafka-acls.sh --operation Write to restrict topic write access"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
+
+  - id: KAFKA-ACL-003
+    title: "Topic create/delete restricted"
+    severity: high
+    category: security
+    description: "Restrict topic creation and deletion to administrators"
+    condition: "true"
+    message: "Verify topic create/delete is restricted via ACLs or config (delete.topic.enable=false)"
+    remediation: "Set ACLs for Create/Delete operations and delete.topic.enable=false"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863", "269"]}
+
+  - id: KAFKA-ACL-004
+    title: "Consumer group ACLs configured"
+    severity: medium
+    category: security
+    description: "Restrict consumer group access with explicit ACLs"
+    condition: "acls.filter(a, a.resource_type == 'GROUP').size() > 0"
+    message: "No consumer group ACLs — any consumer can join any group"
+    remediation: "Use kafka-acls.sh --group to restrict consumer group access"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862"]}
+
+  - id: KAFKA-ACL-005
+    title: "Cluster operations restricted"
+    severity: high
+    category: security
+    description: "Restrict cluster-level operations (AlterConfigs, DescribeConfigs) to admins"
+    condition: "acls.filter(a, a.resource_type == 'CLUSTER').size() > 0"
+    message: "No cluster-level ACLs — any user can modify broker configs"
+    remediation: "Use kafka-acls.sh --cluster to restrict cluster operations"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "269"]}
+
+  - id: KAFKA-ACL-006
+    title: "Default deny policy configured"
+    severity: critical
+    category: security
+    description: "Set allow.everyone.if.no.acl.found=false"
+    condition: "brokers.all(b, 'config' in b && 'allow.everyone.if.no.acl.found' in b.config && b.config['allow.everyone.if.no.acl.found'] == 'false')"
+    message: "Default allow policy — unauthenticated users can access resources"
+    remediation: "Set allow.everyone.if.no.acl.found=false"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
+
+  - id: KAFKA-ACL-007
+    title: "Prefix-based ACLs for scalable management"
+    severity: low
+    category: security
+    description: "Use prefixed resource patterns for scalable ACL management"
+    condition: "true"
+    message: "Consider using prefixed ACLs (e.g. 'myapp-*') for topic groups"
+    remediation: "Define prefixed ACL patterns like 'myapp-*' for topic groups"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
+
+  - id: KAFKA-ACL-008
+    title: "Transactional ID ACLs configured"
+    severity: medium
+    category: security
+    description: "Restrict transactional ID access with ACLs"
+    condition: "true"
+    message: "Verify transactional ID ACLs if using transactions"
+    remediation: "Use kafka-acls.sh --transactional-id to restrict transaction IDs"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "639"]}
+
+  - id: KAFKA-ACL-009
+    title: "Idempotent producer ACLs configured"
+    severity: medium
+    category: security
+    description: "Configure ACLs for idempotent producers"
+    condition: "true"
+    message: "If using idempotent producers, verify IdempotentWrite ACLs"
+    remediation: "Set IdempotentWrite ACLs for idempotent producer applications"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862"]}
+
+  - id: KAFKA-ACL-010
+    title: "Authorizer class configured"
+    severity: critical
+    category: security
+    description: "Enable ACL authorizer: AclAuthorizer (ZK) or StandardAuthorizer (KRaft)"
+    condition: "brokers.all(b, 'config' in b && 'authorizer.class.name' in b.config)"
+    message: "No authorizer configured — ACLs are not enforced"
+    remediation: "Set authorizer.class.name=kafka.security.authorizer.AclAuthorizer (ZK) or StandardAuthorizer (KRaft)"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
+
+  - id: KAFKA-ACL-011
+    title: "Super users configured for break-glass"
+    severity: medium
+    category: security
+    description: "Define super.users for break-glass administration"
+    condition: "brokers.all(b, 'config' in b && 'super.users' in b.config && b.config['super.users'] != '')"
+    message: "Super users not configured — no break-glass admin access"
+    remediation: "Define super.users with restricted membership for emergency access"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-6"], cwe: ["269", "862"]}
+
+  - id: KAFKA-ACL-012
+    title: "Internal topic ACLs applied"
+    severity: high
+    category: security
+    description: "Apply ACLs to internal topics (__consumer_offsets, __transaction_state, _schemas)"
+    condition: "acls.filter(a, a.resource_name.startsWith('__') || a.resource_name.startsWith('_')).size() > 0"
+    message: "No ACLs on internal topics — metadata accessible to all"
+    remediation: "Add ACLs for __consumer_offsets, __transaction_state, _schemas topics"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
+
+  - id: KAFKA-ACL-013
+    title: "No wildcard ACLs in production"
+    severity: high
+    category: security
+    description: "Avoid wildcard (*) ACLs in production"
+    condition: "acls.filter(a, a.principal == '*' || a.host == '*').size() == 0"
+    message: "Wildcard ACLs grant unrestricted access to all principals or hosts"
+    remediation: "Replace wildcard ACLs with explicit or prefixed resource patterns"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
+
+  - id: KAFKA-ACL-014
+    title: "Periodic ACL review"
+    severity: low
+    category: security
+    description: "Review ACLs periodically to remove unused permissions"
+    condition: "true"
+    message: "Schedule periodic ACL reviews (quarterly) to validate least-privilege access"
+    remediation: "Audit ACLs every quarter and remove unused permissions"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-2", "AC-6"], cwe: ["862", "269"]}
+
+  - id: KAFKA-ACL-015
+    title: "RBAC/ABAC via external authorizer"
+    severity: low
+    category: security
+    description: "Implement RBAC/ABAC policies via external authorizers for attribute-based access"
+    condition: "true"
+    message: "Consider external authorizer (OPA, Open Policy Agent) for RBAC/ABAC"
+    remediation: "Integrate OPA or custom authorizer for attribute-based access control"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
+
+  # ═══════════════ AUDIT LOGGING (10) ═══════════════
+  - id: KAFKA-AUDIT-001
+    title: "Authorization audit logging enabled"
+    severity: high
+    category: security
+    description: "Enable authorizer logging to track ACL decisions"
+    condition: "true"
+    message: "Configure log4j.logger.kafka.authorizer.logger=INFO to capture ACL decisions"
+    remediation: "Set log4j.logger.kafka.authorizer.logger=INFO in log4j.properties"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-002
+    title: "Authentication audit logging"
+    severity: high
+    category: security
+    description: "Log authentication successes and failures"
+    condition: "true"
+    message: "Authentication audit logging should capture SASL success/failure events"
+    remediation: "Enable DEBUG logging for org.apache.kafka.common.security"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-003
+    title: "Request logging for client operations"
+    severity: medium
+    category: security
+    description: "Enable request logging to track client operations"
+    condition: "true"
+    message: "Enable kafka.request.logger to capture produce/consume/subscribe actions"
+    remediation: "Configure kafka.request.logger in log4j.properties"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-004
+    title: "Audit log retention configured"
+    severity: medium
+    category: security
+    description: "Configure log retention for audit compliance with restricted permissions"
+    condition: "true"
+    message: "Configure Log4j log retention and protect audit logs with restricted permissions"
+    remediation: "Set log retention >= 90 days, restrict file permissions, forward to centralized logging"
+    compliance: {pci_dss: ["10.5"], nist: ["AU-4", "AU-9", "AU-11"], cwe: ["778"]}
+
+  - id: KAFKA-AUDIT-005
+    title: "ACL and config change audit"
+    severity: high
+    category: security
+    description: "Log and review ACL changes and dynamic config updates"
+    condition: "true"
+    message: "ACL changes and AlterConfigs operations must be logged and forwarded to SIEM"
+    remediation: "Capture AlterConfigs and ACL change events, forward to SIEM/Splunk"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-006
+    title: "Log integrity and SIEM forwarding"
+    severity: high
+    category: security
+    description: "Forward audit logs to centralized storage with integrity protection"
+    condition: "true"
+    message: "Audit logs should be forwarded to SIEM (Splunk/ELK) with WORM storage"
+    remediation: "Forward logs to centralized SIEM, protect with WORM storage or restricted access"
+    compliance: {pci_dss: ["10.5"], nist: ["AU-4", "AU-9"], cwe: ["778"]}
+
+  - id: KAFKA-AUDIT-007
+    title: "Schema Registry change audit [ecosystem]"
+    severity: medium
+    category: security
+    description: "Audit schema registrations, compatibility changes, and deletions"
+    condition: "true"
+    message: "Schema Registry audit requires Schema Registry collector"
+    remediation: "Enable Schema Registry audit logging"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-008
+    title: "Connect connector change audit [ecosystem]"
+    severity: medium
+    category: security
+    description: "Audit Connect connector create/update/pause/delete operations"
+    condition: "true"
+    message: "Connect audit requires Connect collector"
+    remediation: "Enable Kafka Connect audit logging"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-009
+    title: "Consumer group offset change audit"
+    severity: medium
+    category: security
+    description: "Audit consumer group offset resets and membership changes"
+    condition: "true"
+    message: "Consumer group offset changes should be audited"
+    remediation: "Log OffsetCommit and JoinGroup/LeaveGroup events"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-AUDIT-010
+    title: "Data operations audit (produce/consume)"
+    severity: high
+    category: security
+    description: "Capture audit events for produce/consume/subscribe with principal, clientId, source IP"
+    condition: "true"
+    message: "Data operations audit requires an intercepting proxy (Conduktor Gateway) or verbose logging"
+    remediation: "Store audit events in append-only topics with restricted delete ACLs"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-12"], cwe: ["778", "223"]}
+
+  # ═══════════════ HIGH AVAILABILITY / DR (3) ═══════════════
+  - id: KAFKA-AVAIL-001
+    title: "Replication factor >= 3, min ISR >= 2"
+    severity: high
+    category: reliability
+    description: "Set replication.factor >= 3 and min.insync.replicas >= 2 on critical topics"
+    condition: "topics.all(t, t.replication_factor >= 3) && brokers.all(b, 'config' in b && 'min.insync.replicas' in b.config && int(b.config['min.insync.replicas']) >= 2)"
+    message: "Replication factor below 3 or min ISR below 2 — data loss risk on broker failure"
+    remediation: "Set replication.factor >= 3, min.insync.replicas >= 2, acks=all on producers"
+    compliance: {nist: ["CP-2", "CP-10"]}
+
+  - id: KAFKA-AVAIL-002
+    title: "Cross-cluster replication (MirrorMaker 2) [ecosystem]"
+    severity: medium
+    category: reliability
+    description: "Implement cross-cluster replication for critical topics"
+    condition: "true"
+    message: "Cross-cluster replication requires MirrorMaker 2 setup"
+    remediation: "Deploy MirrorMaker 2 with sync.group.offsets, sync.topic.configs, sync.topic.acls"
+    compliance: {nist: ["CP-6", "CP-10"]}
+
+  - id: KAFKA-AVAIL-003
+    title: "Failover drills documented"
+    severity: low
+    category: reliability
+    description: "Document RTO/RPO and run periodic failover drills"
+    condition: "true"
+    message: "Document and test disaster recovery procedures"
+    remediation: "Define RTO/RPO, run quarterly failover drills, verify restore of metadata/schemas/offsets"
+    compliance: {nist: ["CP-2", "CP-4", "CP-10"]}
+
+  # ═══════════════ RESOURCE QUOTAS (8) ═══════════════
+  - id: KAFKA-QUOTA-001
+    title: "Producer byte rate quota configured"
+    severity: medium
+    category: reliability
+    description: "Configure producer_byte_rate quota to prevent resource exhaustion"
+    condition: "true"
+    message: "Producer byte rate quotas not enforced — malicious producer could exhaust resources"
+    remediation: "Set producer_byte_rate quotas via kafka-configs.sh"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
+
+  - id: KAFKA-QUOTA-002
+    title: "Consumer byte rate quota configured"
+    severity: medium
+    category: reliability
+    description: "Configure consumer_byte_rate quota"
+    condition: "true"
+    message: "Consumer byte rate quotas prevent denial of service through excessive consumption"
+    remediation: "Set consumer_byte_rate quotas via kafka-configs.sh"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
+
+  - id: KAFKA-QUOTA-003
+    title: "Request rate quota configured"
+    severity: medium
+    category: reliability
+    description: "Configure request_percentage quota to limit CPU usage per client"
+    condition: "true"
+    message: "Request rate quotas prevent CPU exhaustion"
+    remediation: "Set request_percentage quotas via kafka-configs.sh"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
+
+  - id: KAFKA-QUOTA-004
+    title: "Max connections per IP configured"
+    severity: medium
+    category: security
+    description: "Configure max.connections.per.ip to prevent connection exhaustion"
+    condition: "brokers.all(b, 'config' in b && 'max.connections.per.ip' in b.config)"
+    message: "max.connections.per.ip not configured — vulnerable to connection exhaustion"
+    remediation: "Set max.connections.per.ip to limit connections per client"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770", "799"]}
+
+  - id: KAFKA-QUOTA-005
+    title: "Request size limits configured"
+    severity: medium
+    category: reliability
+    description: "Set max.request.size, socket.request.max.bytes, replica.fetch.max.bytes"
+    condition: "brokers.all(b, 'config' in b && 'max.request.size' in b.config && 'socket.request.max.bytes' in b.config)"
+    message: "Request size limits prevent memory exhaustion from oversized payloads"
+    remediation: "Set max.request.size, socket.request.max.bytes, replica.fetch.max.bytes"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
+
+  - id: KAFKA-QUOTA-006
+    title: "Controller mutation rate quota (KRaft)"
+    severity: medium
+    category: reliability
+    description: "Set controller_mutation_rate quotas in KRaft to limit metadata changes"
+    condition: "true"
+    message: "Controller mutation rate quota available in Kafka 3.0+ for KRaft"
+    remediation: "Set controller_mutation_rate quota via kafka-configs.sh (Kafka 3.0+)"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
+
+  - id: KAFKA-QUOTA-007
+    title: "Connection creation rate quota"
+    severity: medium
+    category: reliability
+    description: "Configure connection_creation_rate quotas to throttle new connections"
+    condition: "true"
+    message: "Connection creation rate quotas mitigate connection storms (Kafka 2.8+)"
+    remediation: "Set connection_creation_rate quota via kafka-configs.sh (Kafka 2.8+)"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770", "799"]}
+
+  - id: KAFKA-QUOTA-008
+    title: "IP-based quotas for unauthenticated clients"
+    severity: medium
+    category: security
+    description: "Apply per-IP quotas for producer/consumer rates"
+    condition: "true"
+    message: "IP-based quotas limit unauthenticated abuse"
+    remediation: "Set entity-type ips quotas for producer/consumer rates"
+    compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
+
+  # ═══════════════ NETWORK SECURITY (5) ═══════════════
+  - id: KAFKA-NET-001
+    title: "Listener isolation configured"
+    severity: high
+    category: security
+    description: "Configure separate listeners for internal and external traffic"
+    condition: "brokers.all(b, 'config' in b && 'listeners' in b.config)"
+    message: "Separate internal/external listeners ensure traffic isolation"
+    remediation: "Configure separate listeners for INTERNAL and EXTERNAL traffic"
+    compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  - id: KAFKA-NET-002
+    title: "Advertised listeners correctly configured"
+    severity: high
+    category: security
+    description: "Configure advertised.listeners correctly to prevent internal address exposure"
+    condition: "brokers.all(b, 'config' in b && 'advertised.listeners' in b.config)"
+    message: "Advertised listeners should match external-facing addresses"
+    remediation: "Set advertised.listeners to DNS names resolvable by clients"
+    compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "200"]}
+
+  - id: KAFKA-NET-003
+    title: "Network segmentation for Kafka"
+    severity: high
+    category: security
+    description: "Deploy Kafka in isolated network segments with firewall rules"
+    condition: "true"
+    message: "Verify Kafka is deployed in isolated network segment with firewall rules"
+    remediation: "Use VPC/subnet isolation, security groups, and restrict access to broker ports"
+    compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  - id: KAFKA-NET-004
+    title: "No PLAINTEXT listeners"
+    severity: critical
+    category: security
+    description: "Remove PLAINTEXT listeners; use SSL or SASL_SSL for all listeners"
+    condition: "brokers.all(b, b.listeners.all(l, l.protocol != 'PLAINTEXT'))"
+    message: "PLAINTEXT listener detected — cleartext traffic over the network"
+    remediation: "Replace PLAINTEXT listeners with SSL or SASL_SSL"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-NET-005
+    title: "Trust zones for sensitive data"
+    severity: medium
+    category: security
+    description: "Isolate sensitive data into dedicated clusters or network zones"
+    condition: "true"
+    message: "Isolate sensitive data flows into dedicated clusters or trust zones"
+    remediation: "Use dedicated clusters for PII/PCI data with sanitization pipelines"
+    compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  # ═══════════════ ZOOKEEPER SECURITY (4) ═══════════════
+  - id: KAFKA-ZK-001
+    title: "ZooKeeper ACLs enabled"
+    severity: high
+    category: security
+    description: "Enable ZooKeeper ACLs to prevent unauthorized metadata access"
+    condition: "cluster.mode != 'zookeeper' || brokers.all(b, 'config' in b && 'zookeeper.set.acl' in b.config && b.config['zookeeper.set.acl'] == 'true')"
+    message: "ZooKeeper ACLs not enabled — metadata accessible without authorization"
+    remediation: "Set zookeeper.set.acl=true"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["284", "862"]}
+
+  - id: KAFKA-ZK-002
+    title: "ZooKeeper SASL authentication"
+    severity: high
+    category: security
+    description: "Configure SASL authentication for ZooKeeper"
+    condition: "cluster.mode != 'zookeeper' || brokers.all(b, 'config' in b && 'zookeeper.sasl.client' in b.config && b.config['zookeeper.sasl.client'] == 'true')"
+    message: "ZooKeeper SASL not enabled — ZK connections unauthenticated"
+    remediation: "Set zookeeper.sasl.client=true"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-ZK-003
+    title: "ZooKeeper mTLS enabled"
+    severity: high
+    category: security
+    description: "Enable mTLS for ZooKeeper connections"
+    condition: "cluster.mode != 'zookeeper' || brokers.all(b, 'config' in b && 'zookeeper.ssl.client.enable' in b.config && b.config['zookeeper.ssl.client.enable'] == 'true')"
+    message: "ZooKeeper mTLS not enabled"
+    remediation: "Set zookeeper.ssl.client.enable=true"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "IA-2"], cwe: ["319", "287"]}
+
+  - id: KAFKA-ZK-004
+    title: "ZooKeeper 4lw commands restricted"
+    severity: medium
+    category: security
+    description: "Restrict ZooKeeper 4lw commands to reduce information exposure"
+    condition: "cluster.mode != 'zookeeper' || true"
+    message: "Restrict 4lw.commands.whitelist to reduce information exposure"
+    remediation: "Set 4lw.commands.whitelist to only required commands"
+    compliance: {pci_dss: ["2.2"], nist: ["CM-7"], cwe: ["200", "749"]}
+
+  # ═══════════════ KRAFT SECURITY (4) ═══════════════
+  - id: KAFKA-KRAFT-001
+    title: "KRaft controller authentication"
+    severity: high
+    category: security
+    description: "Configure SASL or mTLS authentication for KRaft controllers"
+    condition: "true"
+    message: "Ensure KRaft controller communication uses SASL or mTLS"
+    remediation: "Configure controller.quorum.voters with SASL_SSL listener"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-KRAFT-002
+    title: "KRaft controller TLS encryption"
+    severity: critical
+    category: security
+    description: "Enable TLS encryption for controller-to-broker communication"
+    condition: "true"
+    message: "Ensure controller-to-broker communication uses TLS"
+    remediation: "Configure controller.listener.names with SSL or SASL_SSL"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-KRAFT-003
+    title: "KRaft metadata log protection"
+    severity: high
+    category: security
+    description: "Secure metadata.log.dir with restricted filesystem permissions (700)"
+    condition: "true"
+    message: "Verify metadata.log.dir has 700 permissions — contains ACLs and topic configs"
+    remediation: "chmod 700 on metadata.log.dir, run broker as non-root"
+    compliance: {pci_dss: ["2.2"], nist: ["AC-6", "CM-6"], cwe: ["732", "276"]}
+
+  - id: KAFKA-KRAFT-004
+    title: "Controller quorum >= 3 for HA"
+    severity: high
+    category: reliability
+    description: "Deploy minimum 3 controllers for HA. Secure controller.quorum.voters"
+    condition: "true"
+    message: "Deploy at least 3 KRaft controllers for high availability"
+    remediation: "Deploy 3+ controllers, secure controller.quorum.voters configuration"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "284"]}
+
+  # ═══════════════ ECOSYSTEM: KAFKA CONNECT (7) ═══════════════
+  # All require Connect collector [ecosystem]
+  - id: KAFKA-CONNECT-001
+    title: "Connect REST API authentication [ecosystem]"
+    severity: high
+    category: security
+    description: "Enable authentication for Kafka Connect REST API"
+    condition: "true"
+    message: "Connect REST API authentication requires Connect collector"
+    remediation: "Enable HTTP Basic or mTLS auth on Connect REST API"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-CONNECT-002
+    title: "Connect secret externalization [ecosystem]"
+    severity: high
+    category: security
+    description: "Use ConfigProvider to externalize secrets from connector configs"
+    condition: "true"
+    message: "Secrets should be externalized via ConfigProvider, not stored in connector configs"
+    remediation: "Use FileConfigProvider or Vault ConfigProvider for secrets"
+    compliance: {pci_dss: ["3.4"], nist: ["IA-5", "SC-28"], cwe: ["522", "798", "312"]}
+
+  - id: KAFKA-CONNECT-003
+    title: "Connect REST RBAC [ecosystem]"
+    severity: medium
+    category: security
+    description: "Secure Connect REST API with RBAC via reverse proxy or RestExtension"
+    condition: "true"
+    message: "Apache Kafka Connect lacks built-in REST RBAC — requires reverse proxy or custom RestExtension"
+    remediation: "Use OAuth2 proxy, nginx, or Confluent RBAC for Connect REST access control"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
+
+  - id: KAFKA-CONNECT-004
+    title: "Connect REST API TLS [ecosystem]"
+    severity: high
+    category: security
+    description: "Enable HTTPS for Kafka Connect REST endpoints"
+    condition: "true"
+    message: "Connect REST API should use HTTPS"
+    remediation: "Set listeners=https:// and configure ssl.* settings"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-CONNECT-005
+    title: "Connector config override policy [ecosystem]"
+    severity: medium
+    category: security
+    description: "Set connector.client.config.override.policy=None"
+    condition: "true"
+    message: "Connector config override policy should be restrictive"
+    remediation: "Set connector.client.config.override.policy=None or restrictive policy"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-6"], cwe: ["284"]}
+
+  - id: KAFKA-CONNECT-006
+    title: "Connector plugin allowlist [ecosystem]"
+    severity: medium
+    category: security
+    description: "Restrict plugin.path to approved connector directories"
+    condition: "true"
+    message: "Plugin path should be restricted to approved connector directories"
+    remediation: "Set plugin.path to approved directories with read-only permissions"
+    compliance: {pci_dss: ["2.2"], nist: ["CM-7", "SI-7"], cwe: ["829"]}
+
+  - id: KAFKA-CONNECT-007
+    title: "Connect internal topics secured [ecosystem]"
+    severity: high
+    category: security
+    description: "Secure Connect internal topics with ACLs and encryption"
+    condition: "true"
+    message: "Connect internal topics contain connector configs and credentials — must be secured"
+    remediation: "Add ACLs and enable encryption for config/offset/status storage topics"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "SC-28"], cwe: ["862", "312"]}
+
+  # ═══════════════ SCHEMA REGISTRY (4) ═══════════════
+  - id: KAFKA-SR-001
+    title: "Schema Registry authentication [ecosystem]"
+    severity: high
+    category: security
+    description: "Enable authentication for Schema Registry API"
+    condition: "true"
+    message: "Schema Registry authentication requires Schema Registry collector"
+    remediation: "Use HTTPS with client certificates or bearer tokens for SR API"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
+
+  - id: KAFKA-SR-002
+    title: "Schema authorization [ecosystem]"
+    severity: high
+    category: security
+    description: "Implement schema-level authorization"
+    condition: "true"
+    message: "Restrict who can register or evolve schemas"
+    remediation: "Configure schema ACL for subject-level access control"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
+
+  - id: KAFKA-SR-003
+    title: "Schema Registry TLS [ecosystem]"
+    severity: high
+    category: security
+    description: "Enable HTTPS for Schema Registry API"
+    condition: "true"
+    message: "Schema Registry API should use HTTPS"
+    remediation: "Configure HTTPS listener and kafkastore.security.protocol=SSL"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
+
+  - id: KAFKA-SR-004
+    title: "Schema compatibility enforcement [ecosystem]"
+    severity: medium
+    category: security
+    description: "Set schema compatibility mode to prevent breaking changes"
+    condition: "true"
+    message: "Schema compatibility mode prevents breaking changes to data contracts"
+    remediation: "Set compatibility mode to BACKWARD, FULL, or TRANSITIVE"
+    compliance: {pci_dss: ["6.4"], nist: ["CM-3", "SI-10"], cwe: ["20"]}
+
+  # ═══════════════ DATA PROTECTION (13) ═══════════════
+  - id: KAFKA-DATA-001
+    title: "Application-level message encryption"
+    severity: high
+    category: security
+    description: "Implement application-level message encryption for sensitive data fields"
+    condition: "true"
+    message: "Sensitive data should be encrypted at application level before producing to Kafka"
+    remediation: "Encrypt PII/PCI fields with AES-256-GCM before producing"
+    compliance: {pci_dss: ["3.4"], nist: ["SC-28", "SC-13"], cwe: ["311", "312"]}
+
+  - id: KAFKA-DATA-002
+    title: "External key management system"
+    severity: high
+    category: security
+    description: "Use dedicated KMS (Vault, AWS KMS, Azure Key Vault) for encryption keys"
+    condition: "true"
+    message: "Encryption keys should be stored in a dedicated KMS, not in application config"
+    remediation: "Integrate HashiCorp Vault, AWS KMS, or Azure Key Vault"
+    compliance: {pci_dss: ["3.5", "3.6"], nist: ["SC-12", "SC-17"], cwe: ["321"]}
+
+  - id: KAFKA-DATA-003
+    title: "Data masking for non-production"
+    severity: medium
+    category: security
+    description: "Implement data masking for sensitive fields in non-production environments"
+    condition: "true"
+    message: "PII/PCI data should be masked in dev/staging/qa environments"
+    remediation: "Apply masking/tokenization to sensitive fields before non-prod environments"
+    compliance: {pci_dss: ["3.4"], nist: ["AC-4", "SC-28"], cwe: ["200", "359"]}
+
+  - id: KAFKA-DATA-004
+    title: "Topic retention based on data classification"
+    severity: medium
+    category: operational
+    description: "Configure retention.ms based on data classification and compliance requirements"
+    condition: "true"
+    message: "Topic retention should align with data classification policy"
+    remediation: "Set retention.ms according to data classification: PII=90d, PCI=365d per policy"
+    compliance: {pci_dss: ["3.1"], nist: ["AU-11"], cwe: ["212"]}
+
+  - id: KAFKA-DATA-005
+    title: "Compacted topics for GDPR compliance"
+    severity: medium
+    category: operational
+    description: "Use log compaction for topics requiring data erasure (GDPR right to be forgotten)"
+    condition: "true"
+    message: "Compacted topics enable GDPR-compliant data erasure"
+    remediation: "Use cleanup.policy=compact for topics subject to GDPR deletion requests"
+    compliance: {pci_dss: ["3.1"], nist: ["MP-6"], cwe: ["212"]}
+
+  - id: KAFKA-DATA-006
+    title: "Data classification and tagging"
+    severity: medium
+    category: operational
+    description: "Define data classification levels and tag events via headers or schema metadata"
+    condition: "true"
+    message: "Data classification enables automated retention and access policies"
+    remediation: "Use Kafka headers or schema metadata for data classification tags"
+    compliance: {pci_dss: ["3.2"], nist: ["AC-16", "RA-2"], cwe: ["200", "359"]}
+
+  - id: KAFKA-DATA-007
+    title: "PII detection and quarantine"
+    severity: high
+    category: security
+    description: "Detect PII in streams and route to quarantine topics"
+    condition: "true"
+    message: "PII detection requires proxy or stream processor to scan message payloads"
+    remediation: "Use regex/ML-based PII detection and route to quarantine topics"
+    compliance: {pci_dss: ["3.4"], nist: ["SI-4", "SC-28"], cwe: ["200", "359"]}
+
+  - id: KAFKA-DATA-008
+    title: "PII redaction in logs"
+    severity: high
+    category: security
+    description: "Redact or avoid logging message payloads containing PII"
+    condition: "true"
+    message: "Application logs and traces must not contain PII from Kafka messages"
+    remediation: "Redact message bodies from logs; use structured logging with PII filtering"
+    compliance: {pci_dss: ["10.5"], nist: ["AU-3", "AU-9"], cwe: ["532", "359"]}
+
+  - id: KAFKA-DATA-009
+    title: "Data contract enforcement"
+    severity: medium
+    category: operational
+    description: "Define and enforce data contracts (schema, quality rules, ownership) for Kafka topics"
+    condition: "true"
+    message: "Data contracts prevent breaking changes and document topic ownership"
+    remediation: "Define schemas, quality rules, and ownership metadata per topic"
+    compliance: {pci_dss: ["6.5"], nist: ["SI-10", "CM-3"], cwe: ["20"]}
+
+  - id: KAFKA-DATA-010
+    title: "Streaming data quality validation"
+    severity: medium
+    category: operational
+    description: "Apply streaming data quality rules and alert on violations"
+    condition: "true"
+    message: "Data quality rules prevent bad data propagation through pipelines"
+    remediation: "Validate completeness, freshness, and ranges on streams; alert on violations"
+    compliance: {pci_dss: ["10.4"], nist: ["SI-10", "AU-6"], cwe: ["20"]}
+
+  - id: KAFKA-DATA-011
+    title: "Data lineage tracking"
+    severity: medium
+    category: operational
+    description: "Capture end-to-end data lineage for sensitive topics"
+    condition: "true"
+    message: "Data lineage enables audit impact analysis and compliance reporting"
+    remediation: "Track data lineage from source to consumer for sensitive topics"
+    compliance: {pci_dss: ["10.2"], nist: ["AU-3", "AU-12"], cwe: ["778", "223"]}
+
+  - id: KAFKA-DATA-012
+    title: "Data catalog registration"
+    severity: low
+    category: operational
+    description: "Register Kafka topics, schemas, ownership in a data catalog"
+    condition: "true"
+    message: "Data catalog enables topic discovery and access reviews"
+    remediation: "Register topics/schemas/ownership in data catalog (Amundsen, DataHub, Atlan)"
+    compliance: {nist: ["AC-2", "CM-8"]}
+
+  - id: KAFKA-DATA-013
+    title: "Tokenization for high-sensitivity fields"
+    severity: high
+    category: security
+    description: "Apply tokenization or FPE for high-sensitivity fields before cross-zone sharing"
+    condition: "true"
+    message: "Tokenization protects high-sensitivity data across trust zones"
+    remediation: "Apply format-preserving encryption or tokenization before data leaves trust zone"
+    compliance: {pci_dss: ["3.4"], nist: ["SC-28", "MP-6"], cwe: ["359", "312"]}
+
+  # ═══════════════ OPERATIONS (11) ═══════════════
+  - id: KAFKA-OPS-001
+    title: "Regular security patching"
+    severity: high
+    category: operational
+    description: "Maintain regular patching schedule for Kafka brokers and client libraries"
+    condition: "true"
+    message: "Subscribe to Kafka security mailing list and monitor CVE databases"
+    remediation: "Patch Kafka within 30 days of security release. Subscribe to users@kafka.apache.org"
+    compliance: {pci_dss: ["6.3"], nist: ["SI-2", "CM-3"], cwe: ["1104"]}
+
+  - id: KAFKA-OPS-002
+    title: "Configuration hardening"
+    severity: high
+    category: security
+    description: "Remove default accounts, disable unnecessary features, secure JMX"
+    condition: "brokers.all(b, 'config' in b && 'auto.create.topics.enable' in b.config && b.config['auto.create.topics.enable'] == 'false')"
+    message: "Auto topic creation should be disabled in production"
+    remediation: "Disable auto.create.topics, remove default accounts, secure JMX endpoints"
+    compliance: {pci_dss: ["2.2"], nist: ["CM-6", "CM-7"], cwe: ["1188", "798"]}
+
+  - id: KAFKA-OPS-003
+    title: "JMX authentication and TLS"
+    severity: high
+    category: security
+    description: "Secure JMX endpoints with authentication and TLS"
+    condition: "true"
+    message: "JMX endpoints must be secured with authentication and TLS"
+    remediation: "Set com.sun.management.jmxremote.authenticate=true and enable JMX TLS"
+    compliance: {pci_dss: ["8.2", "4.1"], nist: ["IA-2", "SC-8", "AC-3"], cwe: ["306", "287", "319"]}
+
+  - id: KAFKA-OPS-004
+    title: "Admin client tools secured"
+    severity: medium
+    category: security
+    description: "Restrict kafka-*.sh admin tools to authorized personnel"
+    condition: "true"
+    message: "Admin CLI tools should require authentication and be restricted to operators"
+    remediation: "Configure client.properties with SASL_SSL and restrict access to admin tools"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["306", "862"]}
+
+  - id: KAFKA-OPS-005
+    title: "Encrypted Kafka backups"
+    severity: medium
+    category: operational
+    description: "Encrypt backups of Kafka data and configurations"
+    condition: "true"
+    message: "Kafka data and config backups must be encrypted at rest"
+    remediation: "Encrypt backup storage with AES-256 and restrict access"
+    compliance: {pci_dss: ["3.4"], nist: ["CP-9", "SC-28"], cwe: ["311", "312"]}
+
+  - id: KAFKA-OPS-006
+    title: "Config providers for secrets"
+    severity: high
+    category: security
+    description: "Use config.providers to externalize sensitive configs from broker properties"
+    condition: "true"
+    message: "Sensitive configs (passwords, keystore passwords) should be externalized"
+    remediation: "Use config.providers with FileConfigProvider or VaultConfigProvider"
+    compliance: {pci_dss: ["3.4"], nist: ["IA-5", "SC-28"], cwe: ["522", "798", "312"]}
+
+  - id: KAFKA-OPS-007
+    title: "Non-root broker execution"
+    severity: high
+    category: security
+    description: "Run brokers as non-root and restrict filesystem permissions"
+    condition: "true"
+    message: "Brokers should run as dedicated non-root user with restricted file permissions"
+    remediation: "Create kafka user, chmod 750 on log.dirs/config/keystore/truststore"
+    compliance: {pci_dss: ["2.2"], nist: ["AC-6", "CM-6"], cwe: ["732", "276"]}
+
+  - id: KAFKA-OPS-008
+    title: "Auto topic creation disabled"
+    severity: medium
+    category: security
+    description: "Set auto.create.topics.enable=false"
+    condition: "brokers.all(b, 'config' in b && 'auto.create.topics.enable' in b.config && b.config['auto.create.topics.enable'] == 'false')"
+    message: "Auto topic creation enabled — unauthorized topics can be created implicitly"
+    remediation: "Set auto.create.topics.enable=false"
+    compliance: {pci_dss: ["2.2"], nist: ["CM-7"], cwe: ["284"]}
+
+  - id: KAFKA-OPS-009
+    title: "Infrastructure as Code (IaC)"
+    severity: medium
+    category: operational
+    description: "Manage Kafka clusters, topics, ACLs via IaC/GitOps with code review"
+    condition: "true"
+    message: "IaC ensures reproducible, auditable infrastructure changes"
+    remediation: "Use Terraform, Ansible, or Crossplane to manage Kafka config as code"
+    compliance: {pci_dss: ["6.5"], nist: ["CM-2", "CM-6"]}
+
+  - id: KAFKA-OPS-010
+    title: "Dead Letter Queue configured"
+    severity: medium
+    category: operational
+    description: "Configure DLQ topics for Kafka Connect and stream processors"
+    condition: "true"
+    message: "DLQ topics capture failed messages for investigation and replay"
+    remediation: "Configure errors.tolerance=all and errors.deadletterqueue.topic.name"
+    compliance: {pci_dss: ["10.4"], nist: ["SI-11", "AU-6"]}
+
+  - id: KAFKA-OPS-011
+    title: "Incident response runbooks"
+    severity: medium
+    category: operational
+    description: "Maintain incident response runbooks for Kafka data incidents"
+    condition: "true"
+    message: "Runbooks enable consistent incident response for Kafka failures"
+    remediation: "Document runbooks for schema violations, lag spikes, data quality issues"
+    compliance: {pci_dss: ["12.10"], nist: ["IR-4", "IR-5"]}
+
+  # ═══════════════ MONITORING (6) ═══════════════
+  - id: KAFKA-MON-001
+    title: "Security metrics monitoring"
+    severity: high
+    category: operational
+    description: "Monitor authentication failures, ACL denials, and quota violations"
+    condition: "true"
+    message: "Security metrics (auth failures, ACL denials) should be monitored via JMX"
+    remediation: "Export kafka.server:type=BrokerTopicMetrics to Prometheus and alert on anomalies"
+    compliance: {pci_dss: ["10.4"], nist: ["AU-6", "SI-4"], cwe: ["778", "223"]}
+
+  - id: KAFKA-MON-002
+    title: "Anomaly detection configured"
+    severity: medium
+    category: operational
+    description: "Implement anomaly detection for connection patterns"
+    condition: "true"
+    message: "Anomaly detection catches unusual connection or consumption patterns"
+    remediation: "Use Prometheus with outlier detection or anomaly detection on kafka metrics"
+    compliance: {pci_dss: ["10.4"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
+
+  - id: KAFKA-MON-003
+    title: "Security alerts configured"
+    severity: high
+    category: operational
+    description: "Configure alerts for auth failures, ACL changes, quota breaches"
+    condition: "true"
+    message: "Security alerts enable rapid response to potential attacks"
+    remediation: "Set up Prometheus alerts for auth failure rate, ACL deny rate, quota exhaustion"
+    compliance: {pci_dss: ["10.4"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
+
+  - id: KAFKA-MON-004
+    title: "Certificate expiry monitoring"
+    severity: high
+    category: operational
+    description: "Monitor and alert on certificate expiry"
+    condition: "true"
+    message: "Certificate expiry monitoring prevents TLS outages"
+    remediation: "Alert when certificates expire within 30 days. Monitor TLS handshake failures"
+    compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["324", "223"]}
+
+  - id: KAFKA-MON-005
+    title: "Consumer lag monitoring"
+    severity: medium
+    category: operational
+    description: "Monitor consumer lag and lag growth rate"
+    condition: "true"
+    message: "Consumer lag monitoring ensures data freshness SLAs"
+    remediation: "Track consumer group lag via kafka.consumer:type=ConsumerLagMetrics"
+    compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
+
+  - id: KAFKA-MON-006
+    title: "Replication health monitoring"
+    severity: high
+    category: reliability
+    description: "Alert on under-replicated partitions, offline partitions, controller errors"
+    condition: "topics.all(t, t.under_replicated_partitions == 0) && topics.all(t, t.offline_partitions == 0)"
+    message: "Under-replicated or offline partitions detected — data durability at risk"
+    remediation: "Configure alerts for under-replicated partitions, offline partitions, and controller changes"
+    compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
+
+  # ═══════════════ KAFKA STREAMS (2) ═══════════════
+  - id: KAFKA-STREAMS-001
+    title: "Streams state store encryption [ecosystem]"
+    severity: high
+    category: security
+    description: "Encrypt Kafka Streams local state stores (RocksDB)"
+    condition: "true"
+    message: "State stores may contain sensitive data — must be encrypted at rest"
+    remediation: "Enable filesystem encryption on state.dir and restrict permissions"
+    compliance: {pci_dss: ["3.4"], nist: ["SC-28", "AC-6"], cwe: ["311", "732"]}
+
+  - id: KAFKA-STREAMS-002
+    title: "Streams authentication and ACLs [ecosystem]"
+    severity: high
+    category: security
+    description: "Configure security.protocol and ACLs for Streams apps"
+    condition: "true"
+    message: "Streams applications should use SASL_SSL and least-privilege ACLs"
+    remediation: "Apply ACLs for source/sink/repartition/changelog topics used by Streams"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "862"]}
+
+  # ═══════════════ REST PROXY (1) ═══════════════
+  - id: KAFKA-REST-001
+    title: "REST Proxy authentication and TLS [ecosystem]"
+    severity: high
+    category: security
+    description: "Enable authentication and TLS for Kafka REST Proxy endpoints"
+    condition: "true"
+    message: "REST Proxy requires authentication and TLS for production use"
+    remediation: "Configure client.security.protocol=SSL and enable HTTPS on REST Proxy"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5", "SC-8"], cwe: ["287", "306", "319"]}
+
+  # ═══════════════ MIRRORMAKER 2 (1) ═══════════════
+  - id: KAFKA-MM2-001
+    title: "MirrorMaker 2 secure replication [ecosystem]"
+    severity: high
+    category: security
+    description: "Secure MirrorMaker 2 with TLS/SASL and least-privilege ACLs"
+    condition: "true"
+    message: "MirrorMaker 2 should use SASL_SSL and restricted ACLs on source and target"
+    remediation: "Configure security.protocol=SASL_SSL and least-privilege ACLs for MM2"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3", "SC-8"], cwe: ["287", "306", "862", "319"]}
+
+scoring:
+  weights:
+    critical: 15
+    high: 10
+    medium: 5
+    low: 2
+    info: 0
+  pass_threshold: 70
+  thresholds:
+    excellent: 90
+    good: 75
+    poor: 50
+    critical_gap: 0

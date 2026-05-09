@@ -1,0 +1,7 @@
+kafka-security-scanner
+Copyright 2026 Conduktor
+
+This product includes software developed at Conduktor (https://conduktor.io).
+
+This product depends on third-party libraries listed in build.gradle, each
+licensed under their respective open-source licenses (Apache 2.0, BSD, etc.).
