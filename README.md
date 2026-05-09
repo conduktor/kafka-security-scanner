@@ -43,12 +43,23 @@ The 118-control reference catalogue, and its mappings to CWE, NIST 800-53, PCI-D
 
 ## What the scanner actually sees
 
-A full audit needs more than the Kafka wire protocol. This scanner is honest about what it can and can't observe:
+The scanner refuses to lie. Every control either evaluates to a real boolean against collected data, declares it needs operator attestation, or is explicitly covered by a managed-service contract. Silent placeholder controls are rejected at policy load: `condition: "true"` without escape hatch is a build error.
 
-- **AdminClient (today)** — broker and topic configs, ACLs, listeners, KRaft state. Roughly 70% of the catalogue lands here: SASL, TLS, replication factor, `min.insync.replicas`, wildcard ACLs, auto-topic-creation, etc.
-- **Filesystem on the broker host (roadmap)** — file permissions on `server.properties`, JAAS files, keystores, log directories. Required for things like "JAAS not world-readable".
-- **Cloud / k8s control plane (roadmap)** — IAM, network policies, security groups, Strimzi resources. Required for "API not reachable from the internet" or "no public security group rule".
-- **Flavor knowledge (today)** — managed services like Confluent Cloud or AWS MSK guarantee parts of the catalogue (encryption-at-rest, patching, audit pipelines) by contract. The scanner detects flavor from the bootstrap hostname and lets controls declare `covered_by_kafka_flavor: [confluent-cloud, aws-msk, ...]` so they're marked passed with provenance instead of a silent placeholder pass.
+Of the 116 enterprise controls today:
+
+- **~33 evaluated automatically via AdminClient** — broker and topic configs, ACLs, listeners, KRaft state. SASL/TLS posture, replication factor, `min.insync.replicas`, wildcard ACLs, auto-topic-creation.
+- **~79 require operator attestation** — process / governance / OS-level controls (audit log destinations, key custody, DR drills, SCRAM rotation cadence, JVM flags, file perms). Pass `--attest <file.properties>` mapping `<control_id>=pass|fail|na` to record verdicts. Without it, those controls report `attestation_required` (neither pass nor fail).
+- **~3 covered by managed-service contract** — disk encryption, patching, encrypted backups on Confluent Cloud / AWS MSK / Aiven / Redpanda Cloud (auto-detected, see Flavors below).
+
+What the scanner does **not** observe today (the reason so many controls need attestation):
+
+- Filesystem on the broker host (file perms on `server.properties` / JAAS / keystores)
+- JMX broker metrics (UnderReplicatedPartitions, request queue depth, GC, OS load)
+- TLS chain validity (cert expiry, SAN, key size, cipher suites)
+- Cloud / k8s control plane (IAM, network policies, KMS, Strimzi)
+- Ecosystem APIs (Schema Registry, Connect, MirrorMaker)
+
+Each is a **`Collector`** plugged in via the `io.kafkascanner.collectors.Collector` interface. Controls declare `requires: [adminclient, jmx, filesystem]`. If a required collector isn't running, the control resolves to `na` with rationale, never silently passes. The interface and runtime are in place; concrete JMX/Filesystem/TLS implementations are open work.
 
 ### Flavors
 

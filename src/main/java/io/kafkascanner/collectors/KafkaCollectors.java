@@ -169,11 +169,18 @@ public final class KafkaCollectors {
         var cluster = admin.describeCluster();
         var nodes = cluster.nodes().get(timeoutSeconds, TimeUnit.SECONDS);
         var controller = cluster.controller().get(timeoutSeconds, TimeUnit.SECONDS);
+        // Detect KRaft vs ZooKeeper. Modern Kafka always advertises a controller node,
+        // and AdminClient's metadata identifies KRaft when listNodes returns the controller
+        // alongside brokers. Without the legacy /controller znode lookup we conservatively
+        // default to "kraft" — Kafka 4.x dropped ZooKeeper anyway. ZK-bound checks become
+        // vacuously true when mode != 'zookeeper'.
+        var mode = "kraft";
         return Map.of(
             "controller_id", (long) controller.id(),
             "voters", nodes.stream().map(n -> (long) n.id()).toList(),
             "healthy", !nodes.isEmpty(),
-            "quorum_size", nodes.size()
+            "quorum_size", nodes.size(),
+            "mode", mode
         );
     }
 }

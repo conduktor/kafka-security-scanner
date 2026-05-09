@@ -111,7 +111,9 @@ controls:
     severity: medium
     category: operational
     description: "Kafka version must be 2.8+"
-    condition: "true"
+    attestation:
+      required: true
+      prompt: "Kafka version must be 2.8+"
     message: "Kafka version check not yet implemented — kafka_version_gte function pending"
     remediation: "Upgrade to Kafka 3.7+"
 

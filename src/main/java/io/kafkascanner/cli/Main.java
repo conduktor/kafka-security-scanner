@@ -88,6 +88,12 @@ public final class Main implements Runnable {
                 + "redpanda-cloud|azure-eventhubs|warpstream|conduktor-gateway|vanilla")
     private String kafkaFlavorOverride;
 
+    @Option(names = {"--attest"}, defaultValue = "",
+            description = "Path to YAML/properties file mapping control IDs to attestation "
+                + "verdicts (pass|fail|na). Used for governance controls that can't be "
+                + "auto-verified.")
+    private String attestFile;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -137,7 +143,10 @@ public final class Main implements Runnable {
 
                 System.out.println("Evaluating " + engine.policy().controls().size() + " controls...");
                 var displayName = clusterName.isBlank() ? bootstrap : clusterName;
-                var result = engine.evaluate(data, displayName, detection.flavor(), detection.source());
+                var attestations = loadAttestations(attestFile);
+                var availableCollectors = java.util.Set.of("adminclient");
+                var result = engine.evaluate(data, displayName, detection.flavor(), detection.source(),
+                    availableCollectors, attestations);
 
                 printTerminal(result);
 
@@ -161,8 +170,21 @@ public final class Main implements Runnable {
             result.score(), result.passCount(), result.failCount(), result.passRate());
         if (result.kafkaFlavorCoveredCount() > 0) {
             System.out.printf(Locale.ROOT,
-                "  (%d controls covered by %s SLA)%n",
+                "  · %d covered by %s SLA%n",
                 result.kafkaFlavorCoveredCount(), result.cluster().kafkaFlavor());
+        }
+        if (result.attestationRequiredCount() > 0) {
+            System.out.printf(Locale.ROOT,
+                "  · %d need operator attestation (run with --attest <file>)%n",
+                result.attestationRequiredCount());
+        }
+        if (result.naCount() > 0) {
+            System.out.printf(Locale.ROOT,
+                "  · %d N/A — required collectors unavailable: %s%n",
+                result.naCount(), String.join(",", result.collectorsUnavailable()));
+        }
+        if (result.errorCount() > 0) {
+            System.out.printf(Locale.ROOT, "  · %d evaluation errors%n", result.errorCount());
         }
         if (!result.findings().isEmpty()) {
             System.out.println("\n  Top findings:");
@@ -174,6 +196,36 @@ public final class Main implements Runnable {
                     System.out.printf(Locale.ROOT, "    %s %s: %s%n",
                         f.severity().name(), f.controlId(), trimmed);
                 });
+        }
+    }
+
+    private static Map<String, io.kafkascanner.model.ScanModels.Status> loadAttestations(String path) {
+        if (path == null || path.isBlank()) {
+            return Map.of();
+        }
+        try {
+            var props = new Properties();
+            try (var in = new java.io.FileInputStream(path)) {
+                props.load(in);
+            }
+            var out = new java.util.HashMap<String, io.kafkascanner.model.ScanModels.Status>();
+            for (var name : props.stringPropertyNames()) {
+                var value = props.getProperty(name).trim().toLowerCase(Locale.ROOT);
+                var status = switch (value) {
+                    case "pass", "yes", "true" -> io.kafkascanner.model.ScanModels.Status.pass;
+                    case "fail", "no", "false" -> io.kafkascanner.model.ScanModels.Status.fail;
+                    case "na", "n/a" -> io.kafkascanner.model.ScanModels.Status.na;
+                    default -> null;
+                };
+                if (status != null) {
+                    out.put(name, status);
+                }
+            }
+            System.out.println("Loaded " + out.size() + " attestation(s) from " + path);
+            return out;
+        } catch (Exception e) {
+            System.err.println("Failed to load attestations from " + path + ": " + e.getMessage());
+            return Map.of();
         }
     }
 

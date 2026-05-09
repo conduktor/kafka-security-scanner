@@ -3,6 +3,7 @@ package io.kafkascanner.reports;
 import static io.kafkascanner.model.ScanModels.Finding;
 import static io.kafkascanner.model.ScanModels.ScanResult;
 import static io.kafkascanner.model.ScanModels.Severity;
+import static io.kafkascanner.model.ScanModels.Status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -91,8 +92,9 @@ public final class Reporters {
             }
             results.add(Map.of(
                 "ruleId", f.controlId(),
-                "level", sarifLevel(f.severity()),
-                "message", Map.of("text", f.message()),
+                "level", sarifLevelForStatus(f.severity(), f.status()),
+                "message", Map.of("text",
+                    "[" + f.status().name() + "] " + f.message()),
                 "locations", List.of(Map.of(
                     "physicalLocation", Map.of(
                         "artifactLocation", Map.of("uri", "kafka://" + result.cluster().name())
@@ -122,6 +124,15 @@ public final class Reporters {
             case critical, high -> "error";
             case medium -> "warning";
             case low, info -> "note";
+        };
+    }
+
+    private static String sarifLevelForStatus(Severity sev, Status status) {
+        return switch (status) {
+            case fail -> sarifLevel(sev);
+            case attestation_required, na -> "warning";
+            case error -> "error";
+            default -> "note";
         };
     }
 
@@ -209,7 +220,7 @@ public final class Reporters {
             sb.append(csv(f.controlId())).append(',')
                 .append(csv(f.severity().name())).append(',')
                 .append(csv(f.category().name())).append(',')
-                .append(csv(f.status())).append(',')
+                .append(csv(f.status().name())).append(',')
                 .append(csv(f.title())).append(',')
                 .append(csv(f.message())).append(',')
                 .append(csv(f.remediation())).append(',')
