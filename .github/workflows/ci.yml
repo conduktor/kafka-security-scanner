@@ -24,7 +24,9 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Build (compile + linters)
-        run: gradle build -x test
+        # PMD 7.x ASM parser crashes (StackOverflowError) on Java 25 records inside
+        # cold worker JVMs; skip pmdMain on CI until PMD ships a Java 25 fix.
+        run: gradle build -x test -x pmdMain
 
       - name: Run tests (unit + Testcontainers integration)
         run: gradle test
