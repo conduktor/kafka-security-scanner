@@ -99,7 +99,34 @@ public final class FilesystemCollector implements Collector {
                 || log4j.contains("kafka.controller.KafkaController")
                 || log4j.contains("kafka.server.DynamicBrokerConfig"));
 
+        // Retention proof: a Rolling appender plus a max-history/backup-index/strategy.max
+        // setting on the same appender. Avoids the false positive where the property exists
+        // for a different (non-rolling) appender block.
+        fs.put("audit_log_retention_configured", hasRollingRetention(log4j));
+
         return Map.of("fs", fs);
+    }
+
+    /**
+     * True iff log4j config defines a rolling appender that also pins retention.
+     * Matches both log4j 1.x ({@code MaxBackupIndex}) and log4j 2.x ({@code strategy.max}
+     * or {@code DefaultRolloverStrategy max=}).
+     */
+    private static boolean hasRollingRetention(String log4j) {
+        if (log4j.isEmpty()) {
+            return false;
+        }
+        boolean rolling = log4j.contains("RollingFileAppender")
+            || log4j.contains("type = RollingFile")
+            || log4j.contains("type=RollingFile")
+            || log4j.contains("DailyRollingFileAppender");
+        if (!rolling) {
+            return false;
+        }
+        return log4j.contains("MaxBackupIndex")
+            || log4j.contains("MaxHistory")
+            || log4j.contains("strategy.max")
+            || log4j.contains("DefaultRolloverStrategy");
     }
 
     private static String readLog4j(Path dir) {

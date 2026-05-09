@@ -103,11 +103,27 @@ public final class KafkaCollectors {
                 listeners.add(Map.of("protocol", "PLAINTEXT"));
             }
 
+            // Pre-parse numeric configs so CEL conditions can compare with `<`/`>` —
+            // cel-java's int() does not accept strings.
+            var configInt = new HashMap<String, Long>();
+            for (var entry : configMap.entrySet()) {
+                var v = entry.getValue();
+                if (v == null || v.isEmpty()) {
+                    continue;
+                }
+                try {
+                    configInt.put(entry.getKey(), Long.parseLong(v.trim()));
+                } catch (NumberFormatException ignored) {
+                    // non-numeric config: skip
+                }
+            }
+
             var brokerEntry = new HashMap<String, Object>();
             brokerEntry.put("broker_id", (long) node.id());
             brokerEntry.put("host", node.host());
             brokerEntry.put("is_controller", node.id() == controller.id());
             brokerEntry.put("config", configMap);
+            brokerEntry.put("config_int", configInt);
             brokerEntry.put("listeners", listeners);
             brokerEntry.put("sasl", sasl);
             brokerEntry.put("tls", tls);

@@ -69,17 +69,23 @@ Every entry below is a known gap. The CEL expression in the YAML may pass on a h
 
 ### Already actionable: small fixes
 
-These can be addressed without new collectors. Each is a one-line CEL or one collector field.
+~~All 7 closed in pass 6 (commit pending).~~ Each control now uses real collector data instead of a weak proxy:
 
-| Control | What's wrong | Fix |
+| Control | Before (weak proxy) | After (real proof) |
 |---|---|---|
-| AUTH-006 | SCRAM rotation proxy = per-user quota | Use `docs.key_rotation_log.age_days <= 90` |
-| AUTH-007 | Cert rotation proxy = keystore present | Cross-check `tls.days_to_expiry > 30 && docs.key_rotation_log.exists` |
-| ACL-003 | Admin allowlist not enforced | Compare ACL principals against `docs.admin_principals` allowlist |
-| ACL-005 | Any cluster ALLOW passes | Restrict to specific high-privilege principals from a docs allowlist |
-| QUOTA-004 | String inequality on max.connections.per.ip | Parse to int, require `< 10000` (cap) |
-| QUOTA-005 | Title mentions max.request.size, CEL doesn't | Either drop from title OR collect via Connect/client config |
-| AUDIT-004 | Doc presence is the retention proof | Parse log4j RollingFileAppender `MaxHistory` / size |
+| AUTH-006 | per-user quota presence | `docs.key_rotation_log.age_days <= 90` |
+| AUTH-007 | keystore path presence | `tls.handshake_ok && tls.days_to_expiry > 30 && docs.key_rotation_log.exists` |
+| ACL-003 | wildcard absence | every cluster CREATE/DELETE ALLOW principal ∈ `docs.admin_principals.principals` |
+| ACL-005 | non-wildcard ALLOW exists | every cluster ALTER/CREATE/DESCRIBE_CONFIGS/ALTER_CONFIGS principal ∈ allowlist |
+| QUOTA-004 | string ≠ "0" / "MAX_INT" | `b.config_int['max.connections.per.ip'] > 0 && < 10000` |
+| QUOTA-005 | title mentioned max.request.size | title corrected; condition pins `socket.request.max.bytes`, `replica.fetch.max.bytes`, `message.max.bytes` (broker side) |
+| AUDIT-004 | `docs.audit_retention.exists` | `fs.audit_log_retention_configured` (log4j RollingFileAppender + retention setting) |
+
+New collector outputs introduced for these:
+
+- `broker.config_int` (typed numeric mirror of `broker.config`; non-numeric keys skipped) — KafkaCollectors.java
+- `fs.audit_log_retention_configured` — FilesystemCollector.java
+- `docs.admin_principals.principals` (parsed list) — DocsCollector.java
 
 ## Collectors to build (priority-ordered)
 

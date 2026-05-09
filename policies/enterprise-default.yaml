@@ -48,9 +48,10 @@ controls:
     severity: medium
     category: security
     description: "Implement regular rotation of SCRAM credentials"
-    condition: "brokers.all(b, 'config' in b && 'sasl.enabled.mechanisms' in b.config && (b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-256') || b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-512'))) && quotas.exists(q, q.scoped_to_user)"
+    requires: [docs]
+    condition: "brokers.all(b, 'config' in b && 'sasl.enabled.mechanisms' in b.config && (b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-256') || b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-512'))) && docs.key_rotation_log.exists && docs.key_rotation_log.age_days >= 0 && docs.key_rotation_log.age_days <= 90"
     message: "SCRAM credentials should be rotated regularly — document rotation procedure"
-    remediation: "Rotate SCRAM credentials via kafka-configs.sh every 90 days"
+    remediation: "Rotate SCRAM credentials via kafka-configs.sh every 90 days; record each rotation in docs/key-rotation-log.md"
     compliance: {pci_dss: ["8.2"], nist: ["IA-5"], cwe: ["798", "522"]}
 
   - id: KAFKA-AUTH-007
@@ -58,9 +59,10 @@ controls:
     severity: high
     category: security
     description: "Implement automated certificate rotation before expiry. Kafka 2.5+ supports dynamic keystore updates"
-    condition: "brokers.all(b, 'config' in b && 'ssl.keystore.location' in b.config && b.config['ssl.keystore.location'].size() > 0 && 'ssl.endpoint.identification.algorithm' in b.config && b.config['ssl.endpoint.identification.algorithm'] == 'https')"
+    requires: [tls, docs]
+    condition: "tls.handshake_ok && tls.days_to_expiry > 30 && docs.key_rotation_log.exists && docs.key_rotation_log.age_days >= 0 && docs.key_rotation_log.age_days <= 365"
     message: "Ensure certificate rotation is automated — expired certs cause outages"
-    remediation: "Use short-lived certificates and automate rotation. Kafka 2.5+ supports dynamic SSL updates"
+    remediation: "Use short-lived certificates and automate rotation. Kafka 2.5+ supports dynamic SSL updates; record each rotation in docs/key-rotation-log.md"
     compliance: {pci_dss: ["4.1"], nist: ["IA-5", "SC-12"], cwe: ["324"]}
 
   - id: KAFKA-AUTH-008
@@ -261,13 +263,14 @@ controls:
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
 
   - id: KAFKA-ACL-003
-    title: "Topic create/delete restricted"
+    title: "Topic create/delete restricted to admin allowlist"
     severity: high
     category: security
-    description: "Restrict topic creation and deletion to administrators"
-    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && (a.operation == 'CREATE' || a.operation == 'ALTER' || a.operation == 'DELETE')) && !acls.exists(a, a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && (a.operation == 'CREATE' || a.operation == 'DELETE') && (a.principal == 'User:*' || a.principal == '*'))"
-    message: "Verify topic create/delete is restricted via ACLs or config (delete.topic.enable=false)"
-    remediation: "Set ACLs for Create/Delete operations and delete.topic.enable=false"
+    description: "Restrict topic creation and deletion to the principals enumerated in docs/admin-principals.md"
+    requires: [adminclient, docs]
+    condition: "acl_meta.collected && docs.admin_principals.exists && size(docs.admin_principals.principals) > 0 && acls.exists(a, a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && (a.operation == 'CREATE' || a.operation == 'ALTER' || a.operation == 'DELETE')) && acls.all(a, !(a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && (a.operation == 'CREATE' || a.operation == 'DELETE')) || a.principal in docs.admin_principals.principals)"
+    message: "Cluster CREATE/DELETE ACL grants a principal not listed in docs/admin-principals.md"
+    remediation: "Reconcile broker ACLs with docs/admin-principals.md; remove any CREATE/DELETE ALLOW for principals not on the allowlist"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863", "269"]}
 
   - id: KAFKA-ACL-004
@@ -281,13 +284,14 @@ controls:
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862"]}
 
   - id: KAFKA-ACL-005
-    title: "Cluster operations restricted"
+    title: "Cluster operations restricted to admin allowlist"
     severity: high
     category: security
-    description: "Restrict cluster-level operations (AlterConfigs, DescribeConfigs) to admins"
-    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && a.principal != 'User:*' && a.principal != '*' && (a.operation == 'ALTER' || a.operation == 'CREATE' || a.operation == 'DESCRIBE_CONFIGS' || a.operation == 'ALTER_CONFIGS'))"
-    message: "No cluster-level ACLs — any user can modify broker configs"
-    remediation: "Use kafka-acls.sh --cluster to restrict cluster operations"
+    description: "All cluster-level ALLOW grants for ALTER/CREATE/DESCRIBE_CONFIGS/ALTER_CONFIGS must target principals listed in docs/admin-principals.md"
+    requires: [adminclient, docs]
+    condition: "acl_meta.collected && docs.admin_principals.exists && size(docs.admin_principals.principals) > 0 && acls.exists(a, a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && (a.operation == 'ALTER' || a.operation == 'CREATE' || a.operation == 'DESCRIBE_CONFIGS' || a.operation == 'ALTER_CONFIGS')) && acls.all(a, !(a.resource_type == 'CLUSTER' && a.permission_type == 'ALLOW' && (a.operation == 'ALTER' || a.operation == 'CREATE' || a.operation == 'DESCRIBE_CONFIGS' || a.operation == 'ALTER_CONFIGS')) || a.principal in docs.admin_principals.principals)"
+    message: "A cluster-level ALLOW ACL targets a principal not listed in docs/admin-principals.md"
+    remediation: "Limit cluster ALTER/CREATE/DESCRIBE_CONFIGS/ALTER_CONFIGS to the principals in docs/admin-principals.md"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "269"]}
 
   - id: KAFKA-ACL-006
@@ -431,8 +435,8 @@ controls:
     severity: medium
     category: security
     description: "Configure log retention for audit compliance with restricted permissions"
-    requires: [filesystem, docs]
-    condition: "'files' in fs && fs.audit_logger_configured && !fs.any_log_file_world_readable && docs.audit_retention.exists"
+    requires: [filesystem]
+    condition: "'files' in fs && fs.audit_logger_configured && !fs.any_log_file_world_readable && fs.audit_log_retention_configured"
     message: "Configure Log4j log retention and protect audit logs with restricted permissions"
     remediation: "Set log retention >= 90 days, restrict file permissions, forward to centralized logging"
     compliance: {pci_dss: ["10.5"], nist: ["AU-4", "AU-9", "AU-11"], cwe: ["778"]}
@@ -568,23 +572,23 @@ controls:
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
 
   - id: KAFKA-QUOTA-004
-    title: "Max connections per IP configured"
+    title: "Max connections per IP capped at < 10000"
     severity: medium
     category: security
-    description: "Configure max.connections.per.ip to prevent connection exhaustion"
-    condition: "brokers.all(b, 'config' in b && 'max.connections.per.ip' in b.config && b.config['max.connections.per.ip'].size() > 0 && b.config['max.connections.per.ip'] != '0' && b.config['max.connections.per.ip'] != '2147483647')"
-    message: "max.connections.per.ip not configured — vulnerable to connection exhaustion"
-    remediation: "Set max.connections.per.ip to limit connections per client"
+    description: "Configure max.connections.per.ip to a finite cap that bounds connection-exhaustion blast radius"
+    condition: "brokers.all(b, 'config_int' in b && 'max.connections.per.ip' in b.config_int && b.config_int['max.connections.per.ip'] > 0 && b.config_int['max.connections.per.ip'] < 10000)"
+    message: "max.connections.per.ip is unset, zero, or above the 10000 cap — connection-flood DoS surface"
+    remediation: "Set max.connections.per.ip to a positive integer below 10000 on every broker"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770", "799"]}
 
   - id: KAFKA-QUOTA-005
-    title: "Request size limits configured"
+    title: "Broker request and message size limits configured"
     severity: medium
     category: reliability
-    description: "Set max.request.size, socket.request.max.bytes, replica.fetch.max.bytes"
-    condition: "brokers.all(b, 'config' in b && 'socket.request.max.bytes' in b.config && 'replica.fetch.max.bytes' in b.config && 'message.max.bytes' in b.config)"
-    message: "Request size limits prevent memory exhaustion from oversized payloads"
-    remediation: "Set max.request.size, socket.request.max.bytes, replica.fetch.max.bytes"
+    description: "Pin socket.request.max.bytes, replica.fetch.max.bytes and message.max.bytes on every broker so producers can't exhaust memory with oversized payloads. (max.request.size lives on the producer; collect it via Connect or client config.)"
+    condition: "brokers.all(b, 'config_int' in b && 'socket.request.max.bytes' in b.config_int && b.config_int['socket.request.max.bytes'] > 0 && 'replica.fetch.max.bytes' in b.config_int && b.config_int['replica.fetch.max.bytes'] > 0 && 'message.max.bytes' in b.config_int && b.config_int['message.max.bytes'] > 0)"
+    message: "A broker is missing one of socket.request.max.bytes / replica.fetch.max.bytes / message.max.bytes — oversized-payload memory exhaustion surface"
+    remediation: "Set socket.request.max.bytes, replica.fetch.max.bytes and message.max.bytes on every broker"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
 
   - id: KAFKA-QUOTA-006

@@ -5,7 +5,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -61,6 +63,7 @@ public final class DocsCollector implements Collector {
         "backup_encryption",
         "network_topology",
         "disk_encryption_evidence",
+        "admin_principals",
     };
 
     @Override
@@ -120,6 +123,49 @@ public final class DocsCollector implements Collector {
             info.put("age_days", -1L);
             info.put("size", 0L);
         }
+        if ("admin_principals".equals(name)) {
+            info.put("principals", parsePrincipals(candidate));
+        }
         return info;
+    }
+
+    /**
+     * Pulls Kafka principal entries (User:..., Group:...) from a docs file. Lines
+     * starting with {@code #} are ignored; everything else is scanned for the
+     * first principal-shaped token so authors can write either bullet lists,
+     * tables, or plain enumerations.
+     */
+    private static List<String> parsePrincipals(Path file) {
+        var out = new ArrayList<String>();
+        try {
+            for (var raw : Files.readAllLines(file)) {
+                var line = raw.trim();
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                for (var prefix : new String[] {"User:", "Group:"}) {
+                    int idx = line.indexOf(prefix);
+                    if (idx < 0) {
+                        continue;
+                    }
+                    int end = idx + prefix.length();
+                    while (end < line.length()) {
+                        char c = line.charAt(end);
+                        if (Character.isWhitespace(c) || c == ',' || c == ';'
+                            || c == '|' || c == '`' || c == '"' || c == '\'') {
+                            break;
+                        }
+                        end++;
+                    }
+                    var principal = line.substring(idx, end);
+                    if (principal.length() > prefix.length() && !out.contains(principal)) {
+                        out.add(principal);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // best-effort; missing/unreadable file leaves the list empty
+        }
+        return out;
     }
 }
