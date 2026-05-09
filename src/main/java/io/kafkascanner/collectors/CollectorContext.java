@@ -17,6 +17,7 @@ public record CollectorContext(
     @Nullable String restProxyUrl,
     @Nullable String docsDir,
     @Nullable String prometheusUrl,
+    @Nullable String zkAdminHostPort,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -50,5 +51,9 @@ public record CollectorContext(
 
     public boolean hasPrometheusUrl() {
         return prometheusUrl != null && !prometheusUrl.isBlank();
+    }
+
+    public boolean hasZkAdminHostPort() {
+        return zkAdminHostPort != null && !zkAdminHostPort.isBlank();
     }
 }

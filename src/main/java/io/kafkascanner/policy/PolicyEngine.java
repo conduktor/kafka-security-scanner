@@ -86,6 +86,7 @@ public final class PolicyEngine {
             .addVar("docs", mapStringDyn)
             .addVar("alerts", mapStringDyn)
             .addVar("siem", mapStringDyn)
+            .addVar("zk", mapStringDyn)
             .build();
 
         var runtime = CelRuntimeFactory.standardCelRuntimeBuilder().build();
@@ -149,6 +150,7 @@ public final class PolicyEngine {
         activation.put("docs", collectedData.getOrDefault("docs", Map.of()));
         activation.put("alerts", collectedData.getOrDefault("alerts", Map.of()));
         activation.put("siem", collectedData.getOrDefault("siem", Map.of()));
+        activation.put("zk", collectedData.getOrDefault("zk", Map.of()));
 
         List<Finding> findings = new ArrayList<>();
         int passCount = 0;

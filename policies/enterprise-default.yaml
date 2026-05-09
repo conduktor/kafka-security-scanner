@@ -706,13 +706,13 @@ controls:
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "IA-2"], cwe: ["319", "287"]}
 
   - id: KAFKA-ZK-004
-    title: "ZooKeeper 4lw commands restricted"
+    title: "ZooKeeper 4lw commands restricted (probed)"
     severity: medium
     category: security
-    description: "Restrict ZooKeeper 4lw commands to reduce information exposure"
-    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && 'iac' in docs && docs.iac.exists)"
-    message: "Restrict 4lw.commands.whitelist to reduce information exposure"
-    remediation: "Set 4lw.commands.whitelist to only required commands"
+    description: "On ZK mode, 4lw.commands.whitelist must be set to a closed list excluding dump/envi/wchs/wchc/wchp/stat/cons/mntr (probed via the 4lw `conf` command). KRaft clusters are exempt."
+    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && 'four_letter_whitelist_strict' in zk && zk.reachable && zk.four_letter_whitelist_strict)"
+    message: "ZooKeeper 4lw whitelist is open (`*`), unset, or contains a sensitive command (dump/envi/wchs/...)"
+    remediation: "Set 4lw.commands.whitelist=ruok,srvr,conf in zoo.cfg (drop dump/envi/wchs/wchc/wchp/stat/cons/mntr)"
     compliance: {pci_dss: ["2.2"], nist: ["CM-7"], cwe: ["200", "749"]}
 
   # ═══════════════ KRAFT SECURITY (4) ═══════════════

@@ -125,6 +125,10 @@ public final class Main implements Runnable {
             description = "Prometheus base URL for the alerts collector (e.g. http://prom:9090)")
     private String prometheusUrl;
 
+    @Option(names = {"--zk-admin-host-port"}, defaultValue = "",
+            description = "host:port of ZooKeeper admin (4lw) endpoint for the zk collector")
+    private String zkAdminHostPort;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -175,6 +179,7 @@ public final class Main implements Runnable {
                     restProxyUrl.isBlank() ? null : restProxyUrl,
                     docsDir.isBlank() ? null : docsDir,
                     prometheusUrl.isBlank() ? null : prometheusUrl,
+                    zkAdminHostPort.isBlank() ? null : zkAdminHostPort,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -211,6 +216,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("siem")) {
                     collectors.add(new io.kafkascanner.collectors.SiemCollector());
+                }
+                if (enabled.contains("zk")) {
+                    collectors.add(new io.kafkascanner.collectors.ZkAdminCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
