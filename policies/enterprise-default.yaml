@@ -191,7 +191,7 @@ controls:
     severity: medium
     category: security
     description: "Configure strong AEAD cipher suites (GCM, ChaCha20-Poly1305)"
-    condition: "brokers.all(b, 'config' in b && 'ssl.cipher.suites' in b.config && b.config['ssl.cipher.suites'].size() > 0 && b.config['ssl.cipher.suites'].contains('GCM') && !b.config['ssl.cipher.suites'].contains('RC4') && !b.config['ssl.cipher.suites'].contains('3DES') && !b.config['ssl.cipher.suites'].contains('NULL') && !b.config['ssl.cipher.suites'].contains('MD5') && !b.config['ssl.cipher.suites'].contains('EXPORT') && !b.config['ssl.cipher.suites'].contains('DES-CBC'))"
+    condition: "brokers.all(b, 'config' in b && 'ssl.cipher.suites' in b.config && b.config['ssl.cipher.suites'].size() > 0 && (b.config['ssl.cipher.suites'].contains('GCM') || b.config['ssl.cipher.suites'].contains('CHACHA20_POLY1305') || b.config['ssl.cipher.suites'].contains('CHACHA20-POLY1305')) && !b.config['ssl.cipher.suites'].contains('RC4') && !b.config['ssl.cipher.suites'].contains('3DES') && !b.config['ssl.cipher.suites'].contains('NULL') && !b.config['ssl.cipher.suites'].contains('MD5') && !b.config['ssl.cipher.suites'].contains('EXPORT') && !b.config['ssl.cipher.suites'].contains('DES-CBC'))"
     message: "Cipher suites not explicitly configured — may use weak defaults"
     remediation: "Set ssl.cipher.suites to TLS_AES_256_GCM_SHA384 and other AEAD ciphers"
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["326", "327"]}
@@ -212,7 +212,7 @@ controls:
     severity: medium
     category: security
     description: "Enable ssl.endpoint.identification.algorithm=https"
-    condition: "brokers.all(b, 'config' in b && 'ssl.endpoint.identification.algorithm' in b.config && b.config['ssl.endpoint.identification.algorithm'] == 'https')"
+    condition: "brokers.all(b, 'config' in b && 'ssl.endpoint.identification.algorithm' in b.config && b.config['ssl.endpoint.identification.algorithm'] == 'https') && (!('handshake_ok' in tls) || tls.plaintext_endpoint || !tls.handshake_ok || ('hostname_match' in tls && tls.hostname_match))"
     message: "Hostname verification not enabled — vulnerable to MITM"
     remediation: "Set ssl.endpoint.identification.algorithm=https"
     compliance: {pci_dss: ["4.1"], nist: ["SC-17"], cwe: ["295", "297"]}
@@ -223,7 +223,7 @@ controls:
     category: security
     description: "Enable CRL/OCSP checking via JVM properties"
     requires: [process]
-    condition: "!('cmdline' in process) || (process.cmdline.contains('-Dcom.sun.net.ssl.checkRevocation=true') && process.cmdline.contains('-Dcom.sun.security.enableCRLDP=true'))"
+    condition: "'cmdline' in process && process.cmdline.contains('-Dcom.sun.net.ssl.checkRevocation=true') && process.cmdline.contains('-Dcom.sun.security.enableCRLDP=true')"
     message: "CRL/OCSP checking should be enabled via JVM: -Dcom.sun.net.ssl.checkRevocation=true"
     remediation: "Add -Dcom.sun.net.ssl.checkRevocation=true -Dcom.sun.security.enableCRLDP=true"
     compliance: {pci_dss: ["4.1"], nist: ["SC-17", "IA-5"], cwe: ["295", "297"]}
@@ -355,7 +355,7 @@ controls:
     severity: high
     category: security
     description: "Apply ACLs to internal topics (__consumer_offsets, __transaction_state, _schemas)"
-    condition: "topic_meta.collected && acl_meta.collected && topics.filter(t, t.internal).all(t, acls.exists(a, a.resource_type == 'TOPIC' && (a.resource_name == t.name || (a.pattern_type == 'PREFIXED' && t.name.startsWith(a.resource_name)))))"
+    condition: "topic_meta.collected && acl_meta.collected && topics.filter(t, t.internal).all(t, acls.exists(a, a.resource_type == 'TOPIC' && a.permission_type == 'ALLOW' && (a.operation == 'READ' || a.operation == 'WRITE' || a.operation == 'DESCRIBE') && (a.resource_name == t.name || (a.pattern_type == 'PREFIXED' && t.name.startsWith(a.resource_name)))))"
     message: "No ACLs on internal topics — metadata accessible to all"
     remediation: "Add ACLs for __consumer_offsets, __transaction_state, _schemas topics"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
@@ -592,7 +592,7 @@ controls:
     severity: medium
     category: reliability
     description: "Set controller_mutation_rate quotas in KRaft to limit metadata changes"
-    condition: "quota_meta.collected && quotas.exists(q, q.has_controller_mutation_rate)"
+    condition: "cluster.mode != 'kraft' || (quota_meta.collected && quotas.exists(q, q.has_controller_mutation_rate))"
     message: "Controller mutation rate quota available in Kafka 3.0+ for KRaft"
     remediation: "Set controller_mutation_rate quota via kafka-configs.sh (Kafka 3.0+)"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -612,7 +612,7 @@ controls:
     severity: medium
     category: security
     description: "Apply per-IP quotas for producer/consumer rates"
-    condition: "quota_meta.collected && quotas.exists(q, q.scoped_to_ip)"
+    condition: "quota_meta.collected && (quotas.exists(q, q.scoped_to_ip) || brokers.all(b, 'config' in b && 'listener.security.protocol.map' in b.config && !b.config['listener.security.protocol.map'].matches('(?i).*[A-Z0-9_-]+:PLAINTEXT($|,).*')))"
     message: "IP-based quotas limit unauthenticated abuse"
     remediation: "Set entity-type ips quotas for producer/consumer rates"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -706,8 +706,7 @@ controls:
     severity: medium
     category: security
     description: "Restrict ZooKeeper 4lw commands to reduce information exposure"
-    requires: [docs]
-    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && docs.iac.exists)"
+    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && 'iac' in docs && docs.iac.exists)"
     message: "Restrict 4lw.commands.whitelist to reduce information exposure"
     remediation: "Set 4lw.commands.whitelist to only required commands"
     compliance: {pci_dss: ["2.2"], nist: ["CM-7"], cwe: ["200", "749"]}
@@ -738,7 +737,6 @@ controls:
     severity: high
     category: security
     description: "Secure metadata.log.dir with restricted filesystem permissions (700)"
-    requires: [filesystem]
     condition: "cluster.mode == 'zookeeper' || (cluster.mode == 'kraft' && 'files' in fs && 'meta.properties' in fs.files && (fs.files['meta.properties'].perms == '0640' || fs.files['meta.properties'].perms == '0600'))"
     message: "Verify metadata.log.dir has 700 permissions — contains ACLs and topic configs"
     remediation: "chmod 700 on metadata.log.dir, run broker as non-root"
@@ -773,7 +771,7 @@ controls:
     category: security
     description: "Use ConfigProvider to externalize secrets from connector configs"
     requires: [filesystem]
-    condition: "!('connect_properties' in fs) || ('config.providers' in fs.connect_properties && fs.connect_properties['config.providers'].size() > 0)"
+    condition: "!('is_connect_node' in fs) || !fs.is_connect_node || ('config.providers' in fs.connect_properties && fs.connect_properties['config.providers'].size() > 0)"
     message: "Secrets should be externalized via ConfigProvider, not stored in connector configs"
     remediation: "Use FileConfigProvider or Vault ConfigProvider for secrets"
     compliance: {pci_dss: ["3.4"], nist: ["IA-5", "SC-28"], cwe: ["522", "798", "312"]}
@@ -806,7 +804,7 @@ controls:
     category: security
     description: "Set connector.client.config.override.policy=None"
     requires: [filesystem]
-    condition: "!('connect_properties' in fs) || ('connector.client.config.override.policy' in fs.connect_properties && fs.connect_properties['connector.client.config.override.policy'] == 'None')"
+    condition: "!('is_connect_node' in fs) || !fs.is_connect_node || ('connector.client.config.override.policy' in fs.connect_properties && fs.connect_properties['connector.client.config.override.policy'] == 'None')"
     message: "Connector config override policy should be restrictive"
     remediation: "Set connector.client.config.override.policy=None or restrictive policy"
     compliance: {pci_dss: ["7.1"], nist: ["AC-6"], cwe: ["284"]}
@@ -817,7 +815,7 @@ controls:
     category: security
     description: "Restrict plugin.path to approved connector directories"
     requires: [filesystem]
-    condition: "!('connect_properties' in fs) || ('plugin.path' in fs.connect_properties && fs.connect_properties['plugin.path'].size() > 0 && fs.connect_properties['plugin.path'].contains('/') && fs.connect_properties['plugin.path'] != '/usr/share/java')"
+    condition: "!('is_connect_node' in fs) || !fs.is_connect_node || ('plugin.path' in fs.connect_properties && fs.connect_properties['plugin.path'].size() > 0 && fs.connect_properties['plugin.path'].contains('/') && fs.connect_properties['plugin.path'] != '/usr/share/java')"
     message: "Plugin path should be restricted to approved connector directories"
     remediation: "Set plugin.path to approved directories with read-only permissions"
     compliance: {pci_dss: ["2.2"], nist: ["CM-7", "SI-7"], cwe: ["829"]}
@@ -926,7 +924,7 @@ controls:
     category: operational
     description: "Use log compaction for topics requiring data erasure (GDPR right to be forgotten)"
     requires: [docs]
-    condition: "docs.data_classification.exists && (topic_meta.collected && topics.exists(t, !t.internal && t.cleanup_policy.contains('compact')))"
+    condition: "docs.data_classification.exists && (!('iac' in docs) || !topic_meta.collected || !topics.exists(t, t.has_classification) || topics.exists(t, !t.internal && t.cleanup_policy.contains('compact')))"
     message: "Compacted topics enable GDPR-compliant data erasure"
     remediation: "Use cleanup.policy=compact for topics subject to GDPR deletion requests"
     compliance: {pci_dss: ["3.1"], nist: ["MP-6"], cwe: ["212"]}
@@ -1045,7 +1043,7 @@ controls:
     category: security
     description: "Secure JMX endpoints with authentication and TLS"
     requires: [process]
-    condition: "!('cmdline' in process) || (process.cmdline.contains('com.sun.management.jmxremote.authenticate=true') && process.cmdline.contains('com.sun.management.jmxremote.ssl=true'))"
+    condition: "'cmdline' in process && process.cmdline.contains('com.sun.management.jmxremote.authenticate=true') && process.cmdline.contains('com.sun.management.jmxremote.ssl=true')"
     message: "JMX endpoints must be secured with authentication and TLS"
     remediation: "Set com.sun.management.jmxremote.authenticate=true and enable JMX TLS"
     compliance: {pci_dss: ["8.2", "4.1"], nist: ["IA-2", "SC-8", "AC-3"], cwe: ["306", "287", "319"]}
@@ -1176,7 +1174,7 @@ controls:
     category: operational
     description: "Monitor and alert on certificate expiry"
     requires: [tls, docs]
-    condition: "docs.monitoring_alerts.exists && 'handshake_ok' in tls && (tls.plaintext_endpoint || (tls.handshake_ok && tls.days_to_expiry >= 30))"
+    condition: "docs.monitoring_alerts.exists && 'handshake_ok' in tls && tls.handshake_ok && tls.days_to_expiry >= 30"
     message: "Certificate expiry monitoring prevents TLS outages"
     remediation: "Alert when certificates expire within 30 days. Monitor TLS handshake failures"
     compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["324", "223"]}

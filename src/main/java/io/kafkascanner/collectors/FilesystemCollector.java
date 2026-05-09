@@ -58,6 +58,7 @@ public final class FilesystemCollector implements Collector {
         if (connectProps != null) {
             fs.put("connect_properties", connectProps);
         }
+        fs.put("is_connect_node", connectProps != null);
 
         var files = new HashMap<String, Map<String, Object>>();
         try (Stream<Path> entries = Files.list(dir)) {
