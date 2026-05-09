@@ -21,7 +21,7 @@ public final class ScanModels {
         String id, String title, Severity severity, Category category,
         String description, String condition, String message, String remediation,
         Compliance compliance,
-        @JsonProperty("covered_by_flavor") List<String> coveredByFlavor
+        @JsonProperty("covered_by_kafka_flavor") List<String> coveredByKafkaFlavor
     ) {}
 
     public enum Severity { critical, high, medium, low, info }
@@ -52,7 +52,7 @@ public final class ScanModels {
         @JsonProperty("pass_count") int passCount,
         @JsonProperty("fail_count") int failCount,
         @JsonProperty("na_count") int naCount,
-        @JsonProperty("flavor_covered_count") int flavorCoveredCount,
+        @JsonProperty("kafka_flavor_covered_count") int kafkaFlavorCoveredCount,
         @JsonProperty("pass_rate") double passRate,
         List<Finding> findings,
         ClusterInfo cluster
@@ -62,7 +62,7 @@ public final class ScanModels {
         String name, int brokers, int topics,
         @JsonProperty("zk_nodes") int zkNodes,
         @JsonProperty("cluster_mode") String clusterMode,
-        String flavor,
-        @JsonProperty("flavor_source") String flavorSource
+        @JsonProperty("kafka_flavor") String kafkaFlavor,
+        @JsonProperty("kafka_flavor_source") String kafkaFlavorSource
     ) {}
 }

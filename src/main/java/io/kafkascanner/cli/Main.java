@@ -83,10 +83,10 @@ public final class Main implements Runnable {
             description = "Raw JAAS config string; overrides --sasl-username/--sasl-password")
     private String saslJaasConfig;
 
-    @Option(names = {"--flavor"}, defaultValue = "",
-            description = "Override auto-detected flavor: confluent-cloud|aws-msk|aiven|"
+    @Option(names = {"--kafka-flavor"}, defaultValue = "",
+            description = "Override auto-detected Kafka flavor: confluent-cloud|aws-msk|aiven|"
                 + "redpanda-cloud|azure-eventhubs|warpstream|conduktor-gateway|vanilla")
-    private String flavorOverride;
+    private String kafkaFlavorOverride;
 
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
@@ -110,8 +110,8 @@ public final class Main implements Runnable {
             System.out.println("Policy: " + policyFile.getName());
             var engine = PolicyEngine.load(policyFile);
 
-            var detection = FlavorDetector.detect(bootstrap, flavorOverride);
-            System.out.println("Flavor: " + detection.flavor() + "  (" + detection.source() + ")");
+            var detection = FlavorDetector.detect(bootstrap, kafkaFlavorOverride);
+            System.out.println("Kafka flavor: " + detection.flavor() + "  (" + detection.source() + ")");
 
             var props = new Properties();
             props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
@@ -159,10 +159,10 @@ public final class Main implements Runnable {
         System.out.printf(Locale.ROOT,
             "%n  Score: %d/100  |  Pass: %d  |  Fail: %d  |  Pass Rate: %.0f%%%n",
             result.score(), result.passCount(), result.failCount(), result.passRate());
-        if (result.flavorCoveredCount() > 0) {
+        if (result.kafkaFlavorCoveredCount() > 0) {
             System.out.printf(Locale.ROOT,
                 "  (%d controls covered by %s SLA)%n",
-                result.flavorCoveredCount(), result.cluster().flavor());
+                result.kafkaFlavorCoveredCount(), result.cluster().kafkaFlavor());
         }
         if (!result.findings().isEmpty()) {
             System.out.println("\n  Top findings:");

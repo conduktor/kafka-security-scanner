@@ -68,8 +68,8 @@ public final class PolicyEngine {
     public ScanResult evaluate(
         Map<String, Object> collectedData,
         String clusterName,
-        String flavor,
-        String flavorSource
+        String kafkaFlavor,
+        String kafkaFlavorSource
     ) {
         var activation = new HashMap<String, Object>();
         activation.put("brokers", collectedData.getOrDefault("broker", List.of()));
@@ -81,14 +81,14 @@ public final class PolicyEngine {
         int passCount = 0;
         int failCount = 0;
         int naCount = 0;
-        int flavorCoveredCount = 0;
+        int kafkaFlavorCoveredCount = 0;
         int score = 100;
 
         for (var control : policy.controls()) {
-            var coveredBy = control.coveredByFlavor();
-            if (coveredBy != null && coveredBy.contains(flavor)) {
+            var coveredBy = control.coveredByKafkaFlavor();
+            if (coveredBy != null && coveredBy.contains(kafkaFlavor)) {
                 passCount++;
-                flavorCoveredCount++;
+                kafkaFlavorCoveredCount++;
                 continue;
             }
 
@@ -111,7 +111,7 @@ public final class PolicyEngine {
                     score = Math.max(0, score - WEIGHTS.getOrDefault(control.severity().name(), 5));
                     var evidence = new HashMap<String, Object>();
                     evidence.put("control_id", control.id());
-                    evidence.put("flavor", flavor);
+                    evidence.put("kafka_flavor", kafkaFlavor);
                     findings.add(new Finding(
                         control.id(), control.severity(), control.category(),
                         "fail", control.title(), control.message(), control.remediation(),
@@ -138,9 +138,10 @@ public final class PolicyEngine {
 
         return new ScanResult(
             clusterName, "prod", Instant.now().toString(),
-            score, passCount, failCount, naCount, flavorCoveredCount, passRate,
+            score, passCount, failCount, naCount, kafkaFlavorCoveredCount, passRate,
             findings,
-            new ClusterInfo(clusterName, brokerCount, topicCount, 0, "kraft", flavor, flavorSource)
+            new ClusterInfo(clusterName, brokerCount, topicCount, 0, "kraft",
+                kafkaFlavor, kafkaFlavorSource)
         );
     }
 

@@ -48,7 +48,7 @@ A full audit needs more than the Kafka wire protocol. This scanner is honest abo
 - **AdminClient (today)** — broker and topic configs, ACLs, listeners, KRaft state. Roughly 70% of the catalogue lands here: SASL, TLS, replication factor, `min.insync.replicas`, wildcard ACLs, auto-topic-creation, etc.
 - **Filesystem on the broker host (roadmap)** — file permissions on `server.properties`, JAAS files, keystores, log directories. Required for things like "JAAS not world-readable".
 - **Cloud / k8s control plane (roadmap)** — IAM, network policies, security groups, Strimzi resources. Required for "API not reachable from the internet" or "no public security group rule".
-- **Flavor knowledge (today)** — managed services like Confluent Cloud or AWS MSK guarantee parts of the catalogue (encryption-at-rest, patching, audit pipelines) by contract. The scanner detects flavor from the bootstrap hostname and lets controls declare `covered_by_flavor: [confluent-cloud, aws-msk, ...]` so they're marked passed with provenance instead of a silent placeholder pass.
+- **Flavor knowledge (today)** — managed services like Confluent Cloud or AWS MSK guarantee parts of the catalogue (encryption-at-rest, patching, audit pipelines) by contract. The scanner detects flavor from the bootstrap hostname and lets controls declare `covered_by_kafka_flavor: [confluent-cloud, aws-msk, ...]` so they're marked passed with provenance instead of a silent placeholder pass.
 
 ### Flavors
 
@@ -65,7 +65,7 @@ Auto-detected from the first hostname in `--bootstrap`:
 | `*.conduktor.io` / `.cloud`          | `conduktor-gateway` |
 | anything else                        | `vanilla`           |
 
-Override with `--flavor confluent-cloud` if your hostname doesn't match (private DNS, on-prem with a vanity name, etc.). Flavor is included in every finding's evidence and at the top of the report.
+Override with `--kafka-flavor confluent-cloud` if your hostname doesn't match (private DNS, on-prem with a vanity name, etc.). Flavor is included in every finding's evidence and at the top of the report.
 
 ## Quick start
 

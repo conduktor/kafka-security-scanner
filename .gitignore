@@ -4,8 +4,9 @@ build/
 out/
 *.class
 
-# Reports produced by `gradle run` or `scripts/test-all-variants.sh`
-reports/
+# Scan output produced by `gradle run` or `scripts/test-all-variants.sh`.
+# Anchor to repo root so we don't shadow src/main/java/io/kafkascanner/reports/.
+/reports/
 
 # Logs
 *.log
