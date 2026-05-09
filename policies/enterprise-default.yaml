@@ -168,9 +168,9 @@ controls:
 
   - id: KAFKA-ENC-004
     title: "Disk encryption for log directories"
-    severity: high
+    severity: medium
     category: security
-    description: "Enable filesystem-level encryption for Kafka log directories"
+    description: "Enable filesystem-level encryption for Kafka log directories. Severity is medium until a CloudCollector / cryptsetup probe lands; cloud-managed flavors are covered by SLA."
     requires: [docs]
     condition: "docs.disk_encryption_evidence.exists"
     covered_by_kafka_flavor: [confluent-cloud, aws-msk, aiven, redpanda-cloud, azure-eventhubs]
