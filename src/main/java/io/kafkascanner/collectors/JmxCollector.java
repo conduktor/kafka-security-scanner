@@ -1,7 +1,10 @@
 package io.kafkascanner.collectors;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import javax.management.MBeanServerConnection;
@@ -35,10 +38,64 @@ public final class JmxCollector implements Collector {
     @Override
     @SuppressWarnings("BanJNDI")  // JMX RMI is a legitimate JNDI use; broker host is operator-supplied.
     public Map<String, Object> collect(CollectorContext context) {
-        var hostPort = context.jmxHostPort();
-        if (hostPort == null) {
+        var raw = context.jmxHostPort();
+        if (raw == null || raw.isBlank()) {
             return Map.of();
         }
+        // Comma-separated multi-target. Single value still works.
+        var targets = new ArrayList<String>();
+        for (var t : raw.split(",")) {
+            var hp = t.trim();
+            if (!hp.isEmpty()) {
+                targets.add(hp);
+            }
+        }
+
+        var aggregate = new HashMap<String, Object>();
+        var perTarget = new LinkedHashMap<String, Map<String, Object>>();
+        var unreachable = new ArrayList<String>();
+
+        for (var hp : targets) {
+            var single = collectFromOne(hp);
+            if (single == null) {
+                unreachable.add(hp);
+                continue;
+            }
+            perTarget.put(hp, single);
+        }
+
+        // Aggregate: pessimistic. Cluster URP is max(URP) across brokers,
+        // active_controller_count is max (must be 1 cluster-wide), etc.
+        if (!perTarget.isEmpty()) {
+            mergeMax(aggregate, perTarget, "under_replicated_partitions");
+            mergeMax(aggregate, perTarget, "offline_partitions_count");
+            mergeMax(aggregate, perTarget, "active_controller_count");
+            mergeMin(aggregate, perTarget, "request_handler_avg_idle_percent");
+            mergeMin(aggregate, perTarget, "network_processor_avg_idle_percent");
+            mergeMax(aggregate, perTarget, "messages_in_per_sec");
+            mergeMax(aggregate, perTarget, "bytes_in_per_sec");
+            mergeMax(aggregate, perTarget, "isr_shrinks_per_sec");
+            mergeMax(aggregate, perTarget, "jvm_heap_used_pct");
+            mergeMax(aggregate, perTarget, "jvm_threads_count");
+            mergeMax(aggregate, perTarget, "os_load_avg");
+            mergeMax(aggregate, perTarget, "file_descriptor_used_pct");
+            // kafka_version: report the first observed value
+            for (var v : perTarget.values()) {
+                if (v.get("kafka_version") instanceof String s) {
+                    aggregate.put("kafka_version", s);
+                    break;
+                }
+            }
+        }
+        aggregate.put("targets", targets);
+        aggregate.put("targets_reachable", targets.size() - unreachable.size());
+        aggregate.put("targets_unreachable", unreachable);
+        aggregate.put("per_target", perTarget);
+        return Map.of("jmx", aggregate);
+    }
+
+    @SuppressWarnings("BanJNDI")
+    private static @Nullable Map<String, Object> collectFromOne(String hostPort) {
         var url = "service:jmx:rmi:///jndi/rmi://" + hostPort + "/jmxrmi";
         var jmx = new HashMap<String, Object>();
         try (JMXConnector conn = JMXConnectorFactory.connect(new JMXServiceURL(url))) {
@@ -66,18 +123,54 @@ public final class JmxCollector implements Collector {
                     "OneMinuteRate"));
             putIfPresent(jmx, "kafka_version", readString(mbsc,
                 "kafka.server:type=app-info", "version"));
-            putIfPresent(jmx, "jvm_heap_used_pct",
-                readHeapPercent(mbsc));
+            putIfPresent(jmx, "jvm_heap_used_pct", readHeapPercent(mbsc));
             putIfPresent(jmx, "jvm_threads_count",
                 readLong(mbsc, "java.lang:type=Threading", "ThreadCount"));
             putIfPresent(jmx, "os_load_avg",
                 readDouble(mbsc, "java.lang:type=OperatingSystem", "SystemLoadAverage"));
-            putIfPresent(jmx, "file_descriptor_used_pct",
-                readFileDescriptorPercent(mbsc));
-            return Map.of("jmx", jmx);
+            putIfPresent(jmx, "file_descriptor_used_pct", readFileDescriptorPercent(mbsc));
+            return jmx;
         } catch (IOException e) {
-            System.err.println("[jmx] connect failed: " + e.getMessage());
-            return Map.of();
+            System.err.println("[jmx] connect failed for " + hostPort + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static void mergeMax(Map<String, Object> aggregate,
+        Map<String, Map<String, Object>> perTarget, String key) {
+        Double bestD = null;
+        Long bestL = null;
+        for (var v : perTarget.values()) {
+            var raw = v.get(key);
+            if (raw instanceof Long l) {
+                bestL = bestL == null ? l : Math.max(bestL, l);
+            } else if (raw instanceof Double d) {
+                bestD = bestD == null ? d : Math.max(bestD, d);
+            }
+        }
+        if (bestL != null) {
+            aggregate.put(key, bestL);
+        } else if (bestD != null) {
+            aggregate.put(key, bestD);
+        }
+    }
+
+    private static void mergeMin(Map<String, Object> aggregate,
+        Map<String, Map<String, Object>> perTarget, String key) {
+        Double bestD = null;
+        Long bestL = null;
+        for (var v : perTarget.values()) {
+            var raw = v.get(key);
+            if (raw instanceof Long l) {
+                bestL = bestL == null ? l : Math.min(bestL, l);
+            } else if (raw instanceof Double d) {
+                bestD = bestD == null ? d : Math.min(bestD, d);
+            }
+        }
+        if (bestL != null) {
+            aggregate.put(key, bestL);
+        } else if (bestD != null) {
+            aggregate.put(key, bestD);
         }
     }
 
