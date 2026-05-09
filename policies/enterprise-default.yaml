@@ -170,6 +170,7 @@ controls:
     category: security
     description: "Enable filesystem-level encryption for Kafka log directories"
     condition: "true"
+    covered_by_flavor: [confluent-cloud, aws-msk, aiven, redpanda-cloud, azure-eventhubs]
     message: "Verify disk encryption (dm-crypt/LUKS/cloud KMS) is enabled on log.dirs"
     remediation: "Use dm-crypt, LUKS, or cloud provider encryption for log directories"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28"], cwe: ["311", "312"]}
@@ -982,6 +983,7 @@ controls:
     category: operational
     description: "Maintain regular patching schedule for Kafka brokers and client libraries"
     condition: "true"
+    covered_by_flavor: [confluent-cloud, aws-msk, aiven, redpanda-cloud, azure-eventhubs]
     message: "Subscribe to Kafka security mailing list and monitor CVE databases"
     remediation: "Patch Kafka within 30 days of security release. Subscribe to users@kafka.apache.org"
     compliance: {pci_dss: ["6.3"], nist: ["SI-2", "CM-3"], cwe: ["1104"]}
@@ -1022,6 +1024,7 @@ controls:
     category: operational
     description: "Encrypt backups of Kafka data and configurations"
     condition: "true"
+    covered_by_flavor: [confluent-cloud, aws-msk, aiven, redpanda-cloud]
     message: "Kafka data and config backups must be encrypted at rest"
     remediation: "Encrypt backup storage with AES-256 and restrict access"
     compliance: {pci_dss: ["3.4"], nist: ["CP-9", "SC-28"], cwe: ["311", "312"]}

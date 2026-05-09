@@ -4,6 +4,7 @@ import static io.kafkascanner.model.ScanModels.ScanResult;
 import static io.kafkascanner.model.ScanModels.Severity;
 
 import io.kafkascanner.collectors.KafkaCollectors;
+import io.kafkascanner.flavor.FlavorDetector;
 import io.kafkascanner.policy.PolicyEngine;
 import io.kafkascanner.reports.Reporters;
 import java.io.File;
@@ -82,6 +83,11 @@ public final class Main implements Runnable {
             description = "Raw JAAS config string; overrides --sasl-username/--sasl-password")
     private String saslJaasConfig;
 
+    @Option(names = {"--flavor"}, defaultValue = "",
+            description = "Override auto-detected flavor: confluent-cloud|aws-msk|aiven|"
+                + "redpanda-cloud|azure-eventhubs|warpstream|conduktor-gateway|vanilla")
+    private String flavorOverride;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -103,6 +109,9 @@ public final class Main implements Runnable {
             }
             System.out.println("Policy: " + policyFile.getName());
             var engine = PolicyEngine.load(policyFile);
+
+            var detection = FlavorDetector.detect(bootstrap, flavorOverride);
+            System.out.println("Flavor: " + detection.flavor() + "  (" + detection.source() + ")");
 
             var props = new Properties();
             props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
@@ -128,7 +137,7 @@ public final class Main implements Runnable {
 
                 System.out.println("Evaluating " + engine.policy().controls().size() + " controls...");
                 var displayName = clusterName.isBlank() ? bootstrap : clusterName;
-                var result = engine.evaluate(data, displayName);
+                var result = engine.evaluate(data, displayName, detection.flavor(), detection.source());
 
                 printTerminal(result);
 
@@ -150,6 +159,11 @@ public final class Main implements Runnable {
         System.out.printf(Locale.ROOT,
             "%n  Score: %d/100  |  Pass: %d  |  Fail: %d  |  Pass Rate: %.0f%%%n",
             result.score(), result.passCount(), result.failCount(), result.passRate());
+        if (result.flavorCoveredCount() > 0) {
+            System.out.printf(Locale.ROOT,
+                "  (%d controls covered by %s SLA)%n",
+                result.flavorCoveredCount(), result.cluster().flavor());
+        }
         if (!result.findings().isEmpty()) {
             System.out.println("\n  Top findings:");
             Reporters.sortedBySeverity(result.findings()).stream()

@@ -20,7 +20,8 @@ public final class ScanModels {
     public record Control(
         String id, String title, Severity severity, Category category,
         String description, String condition, String message, String remediation,
-        Compliance compliance
+        Compliance compliance,
+        @JsonProperty("covered_by_flavor") List<String> coveredByFlavor
     ) {}
 
     public enum Severity { critical, high, medium, low, info }
@@ -51,6 +52,7 @@ public final class ScanModels {
         @JsonProperty("pass_count") int passCount,
         @JsonProperty("fail_count") int failCount,
         @JsonProperty("na_count") int naCount,
+        @JsonProperty("flavor_covered_count") int flavorCoveredCount,
         @JsonProperty("pass_rate") double passRate,
         List<Finding> findings,
         ClusterInfo cluster
@@ -59,6 +61,8 @@ public final class ScanModels {
     public record ClusterInfo(
         String name, int brokers, int topics,
         @JsonProperty("zk_nodes") int zkNodes,
-        @JsonProperty("cluster_mode") String clusterMode
+        @JsonProperty("cluster_mode") String clusterMode,
+        String flavor,
+        @JsonProperty("flavor_source") String flavorSource
     ) {}
 }

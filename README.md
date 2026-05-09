@@ -41,6 +41,32 @@ Here, controls are data. Each one is a YAML entry with a condition, a severity, 
 
 The 118-control reference catalogue, and its mappings to CWE, NIST 800-53, PCI-DSS 4.0, SOC2, and ISO 27001, lives in [`conduktor/kafka-security-controls`](https://github.com/conduktor/kafka-security-controls). That's where the regulation discussion happens. This repo runs the result.
 
+## What the scanner actually sees
+
+A full audit needs more than the Kafka wire protocol. This scanner is honest about what it can and can't observe:
+
+- **AdminClient (today)** — broker and topic configs, ACLs, listeners, KRaft state. Roughly 70% of the catalogue lands here: SASL, TLS, replication factor, `min.insync.replicas`, wildcard ACLs, auto-topic-creation, etc.
+- **Filesystem on the broker host (roadmap)** — file permissions on `server.properties`, JAAS files, keystores, log directories. Required for things like "JAAS not world-readable".
+- **Cloud / k8s control plane (roadmap)** — IAM, network policies, security groups, Strimzi resources. Required for "API not reachable from the internet" or "no public security group rule".
+- **Flavor knowledge (today)** — managed services like Confluent Cloud or AWS MSK guarantee parts of the catalogue (encryption-at-rest, patching, audit pipelines) by contract. The scanner detects flavor from the bootstrap hostname and lets controls declare `covered_by_flavor: [confluent-cloud, aws-msk, ...]` so they're marked passed with provenance instead of a silent placeholder pass.
+
+### Flavors
+
+Auto-detected from the first hostname in `--bootstrap`:
+
+| Pattern                              | Flavor              |
+|--------------------------------------|---------------------|
+| `*.confluent.cloud`                  | `confluent-cloud`   |
+| `*.kafka.<region>.amazonaws.com`     | `aws-msk`           |
+| `*.aivencloud.com`                   | `aiven`             |
+| `*.cloud.redpanda.com`               | `redpanda-cloud`    |
+| `*.servicebus.windows.net`           | `azure-eventhubs`   |
+| `*.warpstream.com`                   | `warpstream`        |
+| `*.conduktor.io` / `.cloud`          | `conduktor-gateway` |
+| anything else                        | `vanilla`           |
+
+Override with `--flavor confluent-cloud` if your hostname doesn't match (private DNS, on-prem with a vanity name, etc.). Flavor is included in every finding's evidence and at the top of the report.
+
 ## Quick start
 
 ```bash

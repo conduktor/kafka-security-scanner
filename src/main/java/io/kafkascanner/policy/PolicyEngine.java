@@ -5,6 +5,7 @@ import static io.kafkascanner.model.ScanModels.Finding;
 import static io.kafkascanner.model.ScanModels.Policy;
 import static io.kafkascanner.model.ScanModels.ScanResult;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import dev.cel.common.types.ListType;
@@ -27,7 +28,8 @@ import java.util.Map;
  */
 public final class PolicyEngine {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory())
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final Map<String, Integer> WEIGHTS = Map.of(
         "critical", 15, "high", 10, "medium", 5, "low", 2, "info", 0
@@ -63,7 +65,12 @@ public final class PolicyEngine {
     }
 
     @SuppressWarnings("unchecked")
-    public ScanResult evaluate(Map<String, Object> collectedData, String clusterName) {
+    public ScanResult evaluate(
+        Map<String, Object> collectedData,
+        String clusterName,
+        String flavor,
+        String flavorSource
+    ) {
         var activation = new HashMap<String, Object>();
         activation.put("brokers", collectedData.getOrDefault("broker", List.of()));
         activation.put("topics", collectedData.getOrDefault("topic", List.of()));
@@ -74,9 +81,17 @@ public final class PolicyEngine {
         int passCount = 0;
         int failCount = 0;
         int naCount = 0;
+        int flavorCoveredCount = 0;
         int score = 100;
 
         for (var control : policy.controls()) {
+            var coveredBy = control.coveredByFlavor();
+            if (coveredBy != null && coveredBy.contains(flavor)) {
+                passCount++;
+                flavorCoveredCount++;
+                continue;
+            }
+
             var condition = control.condition();
             if ("true".equals(condition)) {
                 passCount++;
@@ -94,10 +109,13 @@ public final class PolicyEngine {
                 } else {
                     failCount++;
                     score = Math.max(0, score - WEIGHTS.getOrDefault(control.severity().name(), 5));
+                    var evidence = new HashMap<String, Object>();
+                    evidence.put("control_id", control.id());
+                    evidence.put("flavor", flavor);
                     findings.add(new Finding(
                         control.id(), control.severity(), control.category(),
                         "fail", control.title(), control.message(), control.remediation(),
-                        Map.of("control_id", (Object) control.id()), control.compliance()
+                        evidence, control.compliance()
                     ));
                 }
             } catch (Exception e) {
@@ -120,10 +138,15 @@ public final class PolicyEngine {
 
         return new ScanResult(
             clusterName, "prod", Instant.now().toString(),
-            score, passCount, failCount, naCount, passRate,
+            score, passCount, failCount, naCount, flavorCoveredCount, passRate,
             findings,
-            new ClusterInfo(clusterName, brokerCount, topicCount, 0, "kraft")
+            new ClusterInfo(clusterName, brokerCount, topicCount, 0, "kraft", flavor, flavorSource)
         );
+    }
+
+    /** Backwards-compatible shim used by tests; treats the cluster as vanilla. */
+    public ScanResult evaluate(Map<String, Object> collectedData, String clusterName) {
+        return evaluate(collectedData, clusterName, "vanilla", "default");
     }
 
     public Policy policy() {
