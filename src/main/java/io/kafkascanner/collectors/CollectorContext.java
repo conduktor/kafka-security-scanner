@@ -19,6 +19,11 @@ public record CollectorContext(
     @Nullable String prometheusUrl,
     @Nullable String zkAdminHostPort,
     @Nullable String consumerJmxHostPorts,
+    @Nullable String ccApiKey,
+    @Nullable String ccApiSecret,
+    @Nullable String ccClusterId,
+    @Nullable String awsRegion,
+    @Nullable String awsMskClusterArn,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -60,5 +65,15 @@ public record CollectorContext(
 
     public boolean hasConsumerJmxHostPorts() {
         return consumerJmxHostPorts != null && !consumerJmxHostPorts.isBlank();
+    }
+
+    public boolean hasCcCreds() {
+        return ccApiKey != null && !ccApiKey.isBlank()
+            && ccApiSecret != null && !ccApiSecret.isBlank();
+    }
+
+    public boolean hasAwsConfig() {
+        return (awsRegion != null && !awsRegion.isBlank())
+            || (awsMskClusterArn != null && !awsMskClusterArn.isBlank());
     }
 }

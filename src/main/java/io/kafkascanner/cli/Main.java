@@ -133,6 +133,26 @@ public final class Main implements Runnable {
             description = "Comma-separated host:port consumer JMX endpoints for the consumerjmx collector")
     private String consumerJmxHostPorts;
 
+    @Option(names = {"--cc-api-key"}, defaultValue = "${CC_API_KEY}",
+            description = "Confluent Cloud API key (env: CC_API_KEY)")
+    private String ccApiKey;
+
+    @Option(names = {"--cc-api-secret"}, defaultValue = "${CC_API_SECRET}",
+            description = "Confluent Cloud API secret (env: CC_API_SECRET)")
+    private String ccApiSecret;
+
+    @Option(names = {"--cc-cluster-id"}, defaultValue = "${CC_CLUSTER_ID}",
+            description = "Confluent Cloud Kafka cluster id (lkc-XXXXX)")
+    private String ccClusterId;
+
+    @Option(names = {"--aws-region"}, defaultValue = "${AWS_REGION}",
+            description = "AWS region for the awsmsk collector (env: AWS_REGION)")
+    private String awsRegion;
+
+    @Option(names = {"--aws-msk-cluster-arn"}, defaultValue = "",
+            description = "MSK cluster ARN; if omitted the collector lists the region's clusters and matches by bootstrap")
+    private String awsMskClusterArn;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -185,6 +205,11 @@ public final class Main implements Runnable {
                     prometheusUrl.isBlank() ? null : prometheusUrl,
                     zkAdminHostPort.isBlank() ? null : zkAdminHostPort,
                     consumerJmxHostPorts.isBlank() ? null : consumerJmxHostPorts,
+                    ccApiKey == null || ccApiKey.isBlank() ? null : ccApiKey,
+                    ccApiSecret == null || ccApiSecret.isBlank() ? null : ccApiSecret,
+                    ccClusterId == null || ccClusterId.isBlank() ? null : ccClusterId,
+                    awsRegion == null || awsRegion.isBlank() ? null : awsRegion,
+                    awsMskClusterArn.isBlank() ? null : awsMskClusterArn,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -227,6 +252,12 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("consumerjmx")) {
                     collectors.add(new io.kafkascanner.collectors.ConsumerJmxCollector());
+                }
+                if (enabled.contains("confluentcloud") || enabled.contains("cc")) {
+                    collectors.add(new io.kafkascanner.collectors.ConfluentCloudCollector());
+                }
+                if (enabled.contains("awsmsk") || enabled.contains("msk")) {
+                    collectors.add(new io.kafkascanner.collectors.AwsMskCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)

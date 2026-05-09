@@ -1305,6 +1305,77 @@ controls:
     remediation: "Rotate broker certificates; automate via cert-manager / Vault PKI"
     compliance: {pci_dss: ["4.1"], nist: ["SC-12"], cwe: ["298", "324"]}
 
+  # ═══════════════ CONFLUENT CLOUD (3) ═══════════════
+  # Activate when --kafka-flavor=confluent-cloud OR bootstrap is on *.confluent.cloud.
+  # The collector is gated on flavor or on --cc-api-key/secret.
+  - id: KAFKA-CC-001
+    title: "Confluent Cloud control-plane requires auth"
+    severity: critical
+    category: security
+    description: "api.confluent.cloud and api.telemetry.confluent.cloud must reject anonymous calls (401/403)"
+    requires: [confluentcloud]
+    condition: "cc.api_reachable && cc.api_requires_auth && cc.metrics_api_reachable && cc.metrics_api_requires_auth"
+    message: "Confluent Cloud API is reachable but does NOT require auth — credentials are likely cached client-side or the API is not what we think"
+    remediation: "Investigate immediately; the only acceptable anonymous response is 401/403"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "306"]}
+
+  - id: KAFKA-CC-002
+    title: "Confluent Cloud cluster is dedicated or enterprise"
+    severity: medium
+    category: security
+    description: "Basic and Standard clusters share infrastructure with other tenants. PII / regulated workloads must run on Dedicated or Enterprise."
+    requires: [confluentcloud]
+    condition: "!cc.flavor_detected || !cc.api_authenticated || cc.dedicated_or_enterprise"
+    message: "Confluent Cloud cluster is Basic or Standard — multi-tenant blast radius exposure"
+    remediation: "Migrate regulated workloads to a Dedicated or Enterprise cluster"
+    compliance: {pci_dss: ["1.3"], nist: ["SC-7", "SC-32"], cwe: ["668"]}
+
+  - id: KAFKA-CC-003
+    title: "Confluent Cloud private networking enabled"
+    severity: high
+    category: security
+    description: "Cluster network spec must reference a private network (PrivateLink / VPC Peering / Transit Gateway). Public clusters are reachable from the open internet."
+    requires: [confluentcloud]
+    condition: "!cc.flavor_detected || !cc.api_authenticated || cc.private_networking"
+    message: "Confluent Cloud cluster has no private-networking config — reachable from the public internet"
+    remediation: "Bind the cluster to a Network resource (PrivateLink/Peered/TransitGateway)"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  # ═══════════════ AWS MSK (3) ═══════════════
+  # Active when --kafka-flavor=aws-msk OR bootstrap is on *.kafka*.amazonaws.com.
+  - id: KAFKA-AWS-001
+    title: "AWS MSK encryption-at-rest enabled"
+    severity: high
+    category: security
+    description: "MSK cluster must have encryption-at-rest configured (AWS-managed CMK or customer-managed)"
+    requires: [awsmsk]
+    condition: "!aws.flavor_detected || !aws.sdk_available || aws.encryption_at_rest"
+    message: "MSK cluster has no encryption-at-rest configured"
+    remediation: "Recreate the cluster with encryption.encryptionAtRest set to a KMS key"
+    compliance: {pci_dss: ["3.4"], nist: ["SC-28"], cwe: ["311", "312"]}
+
+  - id: KAFKA-AWS-002
+    title: "AWS MSK public access disabled"
+    severity: critical
+    category: security
+    description: "Public access on MSK exposes brokers to the open internet — must be DISABLED"
+    requires: [awsmsk]
+    condition: "!aws.flavor_detected || !aws.sdk_available || !aws.public_access"
+    message: "AWS MSK cluster has public access enabled"
+    remediation: "Set BrokerNodeGroupInfo.ConnectivityInfo.PublicAccess.Type=DISABLED"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7"], cwe: ["284", "923", "668"]}
+
+  - id: KAFKA-AWS-003
+    title: "AWS MSK security groups have no 0.0.0.0/0 ingress on broker ports"
+    severity: critical
+    category: security
+    description: "EC2 SG ingress rules attached to the broker ENIs must not allow 0.0.0.0/0 on 9092/9094/9098"
+    requires: [awsmsk]
+    condition: "!aws.flavor_detected || !aws.sdk_available || !aws.any_sg_open_to_world"
+    message: "An MSK broker security group allows 0.0.0.0/0 ingress on 9092/9094/9098"
+    remediation: "Tighten the SG ingress rules to private subnets / VPC peering / corporate CIDRs only"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
 scoring:
   weights:
     critical: 15
