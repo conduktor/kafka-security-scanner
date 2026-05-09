@@ -40,6 +40,7 @@ public final class DocsCollector implements Collector {
         "acl_review_log",
         "patching_log",
         "data_classification",
+        "data_masking",
         "key_rotation_log",
         "iac",
         "monitoring_alerts",
@@ -49,9 +50,17 @@ public final class DocsCollector implements Collector {
         "tenant_principal_map",
         "oauth_token_policy",
         "schema_auth_policy",
+        "schema_audit_log",
         "streams_state_encryption",
+        "streams_security_policy",
         "rbac_policy",
         "principal_mapping_rules",
+        "audit_retention",
+        "audit_pipeline",
+        "connect_audit_policy",
+        "backup_encryption",
+        "network_topology",
+        "disk_encryption_evidence",
     };
 
     @Override
