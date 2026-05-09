@@ -111,10 +111,9 @@ controls:
     severity: medium
     category: operational
     description: "Kafka version must be 2.8+"
-    attestation:
-      required: true
-      prompt: "Kafka version must be 2.8+"
-    message: "Kafka version check not yet implemented — kafka_version_gte function pending"
+    requires: [jmx]
+    condition: "!('kafka_version' in jmx) || jmx.kafka_version.startsWith('3.') || jmx.kafka_version.startsWith('4.')"
+    message: "Kafka version is below 3.0 — out of support"
     remediation: "Upgrade to Kafka 3.7+"
 
   - id: CMP-001

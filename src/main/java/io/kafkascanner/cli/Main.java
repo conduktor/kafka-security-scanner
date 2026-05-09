@@ -91,12 +91,6 @@ public final class Main implements Runnable {
                 + "redpanda-cloud|azure-eventhubs|warpstream|conduktor-gateway|vanilla")
     private String kafkaFlavorOverride;
 
-    @Option(names = {"--attest"}, defaultValue = "",
-            description = "Path to YAML/properties file mapping control IDs to attestation "
-                + "verdicts (pass|fail|na). Used for governance controls that can't be "
-                + "auto-verified.")
-    private String attestFile;
-
     @Option(names = {"--collectors"}, defaultValue = "adminclient",
             description = "Comma-separated collectors to enable: "
                 + "adminclient,jmx,filesystem (default: adminclient)")
@@ -110,6 +104,22 @@ public final class Main implements Runnable {
     @Option(names = {"--jmx-host-port"}, defaultValue = "",
             description = "host:port of broker JMX endpoint for the jmx collector (e.g. localhost:9999)")
     private String jmxHostPort;
+
+    @Option(names = {"--connect-url"}, defaultValue = "",
+            description = "Kafka Connect REST URL for the connect collector (e.g. http://host:8083)")
+    private String connectUrl;
+
+    @Option(names = {"--schema-registry-url"}, defaultValue = "",
+            description = "Schema Registry REST URL for the schemaregistry collector")
+    private String schemaRegistryUrl;
+
+    @Option(names = {"--rest-proxy-url"}, defaultValue = "",
+            description = "Kafka REST Proxy URL for the restproxy collector")
+    private String restProxyUrl;
+
+    @Option(names = {"--docs-dir"}, defaultValue = "",
+            description = "Directory of governance artifacts (runbooks, drill logs) for the docs collector")
+    private String docsDir;
 
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
@@ -156,6 +166,10 @@ public final class Main implements Runnable {
                     bootstrap, Duration.ofSeconds(timeout), admin,
                     kafkaConfigDir.isBlank() ? null : kafkaConfigDir,
                     jmxHostPort.isBlank() ? null : jmxHostPort,
+                    connectUrl.isBlank() ? null : connectUrl,
+                    schemaRegistryUrl.isBlank() ? null : schemaRegistryUrl,
+                    restProxyUrl.isBlank() ? null : restProxyUrl,
+                    docsDir.isBlank() ? null : docsDir,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -175,6 +189,18 @@ public final class Main implements Runnable {
                 if (enabled.contains("process")) {
                     collectors.add(new io.kafkascanner.collectors.ProcessCollector());
                 }
+                if (enabled.contains("connect")) {
+                    collectors.add(new io.kafkascanner.collectors.ConnectCollector());
+                }
+                if (enabled.contains("schemaregistry")) {
+                    collectors.add(new io.kafkascanner.collectors.SchemaRegistryCollector());
+                }
+                if (enabled.contains("restproxy")) {
+                    collectors.add(new io.kafkascanner.collectors.RestProxyCollector());
+                }
+                if (enabled.contains("docs")) {
+                    collectors.add(new io.kafkascanner.collectors.DocsCollector());
+                }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
                         .collect(java.util.stream.Collectors.joining(",")) + ")...");
@@ -189,10 +215,8 @@ public final class Main implements Runnable {
 
                 System.out.println("Evaluating " + engine.policy().controls().size() + " controls...");
                 var displayName = clusterName.isBlank() ? bootstrap : clusterName;
-                var attestations = loadAttestations(attestFile);
                 var result = engine.evaluate(outcome.data(), displayName,
-                    detection.flavor(), detection.source(),
-                    outcome.ran(), attestations);
+                    detection.flavor(), detection.source(), outcome.ran());
 
                 printTerminal(result);
 
@@ -219,11 +243,6 @@ public final class Main implements Runnable {
                 "  · %d covered by %s SLA%n",
                 result.kafkaFlavorCoveredCount(), result.cluster().kafkaFlavor());
         }
-        if (result.attestationRequiredCount() > 0) {
-            System.out.printf(Locale.ROOT,
-                "  · %d need operator attestation (run with --attest <file>)%n",
-                result.attestationRequiredCount());
-        }
         if (result.naCount() > 0) {
             System.out.printf(Locale.ROOT,
                 "  · %d N/A — required collectors unavailable: %s%n",
@@ -245,35 +264,6 @@ public final class Main implements Runnable {
         }
     }
 
-    private static Map<String, io.kafkascanner.model.ScanModels.Status> loadAttestations(String path) {
-        if (path == null || path.isBlank()) {
-            return Map.of();
-        }
-        try {
-            var props = new Properties();
-            try (var in = new java.io.FileInputStream(path)) {
-                props.load(in);
-            }
-            var out = new java.util.HashMap<String, io.kafkascanner.model.ScanModels.Status>();
-            for (var name : props.stringPropertyNames()) {
-                var value = props.getProperty(name).trim().toLowerCase(Locale.ROOT);
-                var status = switch (value) {
-                    case "pass", "yes", "true" -> io.kafkascanner.model.ScanModels.Status.pass;
-                    case "fail", "no", "false" -> io.kafkascanner.model.ScanModels.Status.fail;
-                    case "na", "n/a" -> io.kafkascanner.model.ScanModels.Status.na;
-                    default -> null;
-                };
-                if (status != null) {
-                    out.put(name, status);
-                }
-            }
-            System.out.println("Loaded " + out.size() + " attestation(s) from " + path);
-            return out;
-        } catch (Exception e) {
-            System.err.println("Failed to load attestations from " + path + ": " + e.getMessage());
-            return Map.of();
-        }
-    }
 
     private void applySaslConfig(Properties props) {
         if (!securityProtocol.isBlank()) {

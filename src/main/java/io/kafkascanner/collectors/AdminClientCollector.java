@@ -41,11 +41,14 @@ public final class AdminClientCollector implements Collector {
                 KafkaCollectors.collectAcls(admin, timeoutSeconds));
             var cluster = executor.submit(() ->
                 KafkaCollectors.collectCluster(admin, timeoutSeconds));
+            var quotas = executor.submit(() ->
+                KafkaCollectors.collectQuotas(admin, timeoutSeconds));
 
             putOrLog(data, "broker", brokers, timeoutSeconds, "broker");
             putOrLog(data, "topic", topics, timeoutSeconds, "topic");
             putOrLog(data, "acl", acls, timeoutSeconds, "acl");
             putOrLog(data, "kraft", cluster, timeoutSeconds, "kraft");
+            putOrLog(data, "quota", quotas, timeoutSeconds, "quota");
         }
         return data;
     }

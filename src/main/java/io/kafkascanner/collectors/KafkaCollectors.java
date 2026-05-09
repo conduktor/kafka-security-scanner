@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.common.acl.AclBindingFilter;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.quota.ClientQuotaFilter;
 
 /** Collects cluster metadata via Kafka AdminClient using virtual threads. */
 
@@ -138,6 +139,38 @@ public final class KafkaCollectors {
             result.put("offline_partitions", offline);
             return result;
         }).collect(Collectors.toList());
+    }
+
+    static List<Map<String, Object>> collectQuotas(AdminClient admin, int timeoutSeconds) throws Exception {
+        var result = admin.describeClientQuotas(ClientQuotaFilter.all())
+            .entities().get(timeoutSeconds, TimeUnit.SECONDS);
+        var out = new ArrayList<Map<String, Object>>();
+        for (var entry : result.entrySet()) {
+            var entity = entry.getKey();
+            var values = entry.getValue();
+            var m = new HashMap<String, Object>();
+            m.put("entity", entity.entries());
+            // Common quota keys: producer_byte_rate, consumer_byte_rate, request_percentage,
+            // controller_mutation_rate, connection_creation_rate.
+            for (var kv : values.entrySet()) {
+                m.put(kv.getKey(), kv.getValue());
+            }
+            // Has-flags so CEL can write `quotas.exists(q, q.has_producer_byte_rate)`.
+            m.put("has_producer_byte_rate", values.containsKey("producer_byte_rate"));
+            m.put("has_consumer_byte_rate", values.containsKey("consumer_byte_rate"));
+            m.put("has_request_percentage", values.containsKey("request_percentage"));
+            m.put("has_controller_mutation_rate",
+                values.containsKey("controller_mutation_rate"));
+            m.put("has_connection_creation_rate",
+                values.containsKey("connection_creation_rate"));
+            // Entity classification: per-user, per-client-id, per-ip.
+            var entries = entity.entries();
+            m.put("scoped_to_user", entries.containsKey("user"));
+            m.put("scoped_to_client_id", entries.containsKey("client-id"));
+            m.put("scoped_to_ip", entries.containsKey("ip"));
+            out.add(m);
+        }
+        return out;
     }
 
     static List<Map<String, Object>> collectAcls(AdminClient admin, int timeoutSeconds) throws Exception {

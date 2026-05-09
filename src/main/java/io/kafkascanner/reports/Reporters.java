@@ -130,7 +130,7 @@ public final class Reporters {
     private static String sarifLevelForStatus(Severity sev, Status status) {
         return switch (status) {
             case fail -> sarifLevel(sev);
-            case attestation_required, na -> "warning";
+            case na -> "warning";
             case error -> "error";
             default -> "note";
         };

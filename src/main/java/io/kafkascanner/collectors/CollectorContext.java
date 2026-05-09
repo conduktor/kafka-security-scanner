@@ -12,6 +12,10 @@ public record CollectorContext(
     @Nullable AdminClient adminClient,
     @Nullable String kafkaConfigDir,
     @Nullable String jmxHostPort,
+    @Nullable String connectUrl,
+    @Nullable String schemaRegistryUrl,
+    @Nullable String restProxyUrl,
+    @Nullable String docsDir,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -25,5 +29,21 @@ public record CollectorContext(
 
     public boolean hasJmx() {
         return jmxHostPort != null && !jmxHostPort.isBlank();
+    }
+
+    public boolean hasConnectUrl() {
+        return connectUrl != null && !connectUrl.isBlank();
+    }
+
+    public boolean hasSchemaRegistryUrl() {
+        return schemaRegistryUrl != null && !schemaRegistryUrl.isBlank();
+    }
+
+    public boolean hasRestProxyUrl() {
+        return restProxyUrl != null && !restProxyUrl.isBlank();
+    }
+
+    public boolean hasDocsDir() {
+        return docsDir != null && !docsDir.isBlank();
     }
 }

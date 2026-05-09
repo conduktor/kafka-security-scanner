@@ -67,7 +67,6 @@ public final class FilesystemCollector implements Collector {
         }
         fs.put("files", files);
 
-        // Pre-computed booleans the CEL conditions can branch on.
         fs.put("jaas_present", files.containsKey("kafka_server_jaas.conf"));
         fs.put("server_properties_world_readable",
             isWorldReadable(files.get("server.properties")));
@@ -77,8 +76,34 @@ public final class FilesystemCollector implements Collector {
             files.entrySet().stream()
                 .filter(e -> e.getKey().endsWith(".jks") || e.getKey().endsWith(".p12"))
                 .anyMatch(e -> isWorldReadable(e.getValue())));
+        fs.put("any_log_file_world_readable",
+            files.entrySet().stream()
+                .filter(e -> e.getKey().endsWith(".log"))
+                .anyMatch(e -> isWorldReadable(e.getValue())));
+
+        // Parse log4j properties so AUDIT controls can check logger configuration.
+        var log4j = readLog4j(dir);
+        fs.put("audit_logger_configured", log4j.contains("kafka.authorizer.logger"));
+        fs.put("request_logger_configured", log4j.contains("kafka.request.logger"));
+        fs.put("controller_logger_configured", log4j.contains("kafka.controller"));
 
         return Map.of("fs", fs);
+    }
+
+    private static String readLog4j(Path dir) {
+        var sb = new StringBuilder();
+        for (var name : new String[] {"log4j.properties", "log4j2.properties", "log4j2.yaml"}) {
+            var p = dir.resolve(name);
+            if (Files.exists(p)) {
+                try {
+                    sb.append(Files.readString(p));
+                    sb.append('\n');
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
+        }
+        return sb.toString();
     }
 
     private static @Nullable Map<String, String> readProps(Path file) {

@@ -32,13 +32,13 @@ import java.util.Set;
  * <p>A control resolves in this order:
  * <ol>
  *   <li>{@code covered_by_kafka_flavor} matches detected flavor → {@code covered_by_flavor}</li>
- *   <li>{@code attestation.required} → uses operator attestation, else {@code attestation_required}</li>
  *   <li>{@code requires} list contains a collector that did not run → {@code na}</li>
  *   <li>CEL {@code condition} evaluates to bool → {@code pass}/{@code fail}</li>
  * </ol>
  *
- * <p>A control with no real condition, no attestation, and no flavor coverage is a
- * silent placeholder. {@link #load(File)} rejects such policies at load time.
+ * <p>Every control must declare a real CEL condition or {@code covered_by_kafka_flavor}.
+ * Manual attestation is intentionally not a valid resolution: {@link #load(File)} rejects
+ * placeholder policies at load time so the scanner never claims a pass it can't prove.
  */
 public final class PolicyEngine {
 
@@ -71,11 +71,16 @@ public final class PolicyEngine {
             .addVar("brokers", listOfDyn)
             .addVar("topics", listOfDyn)
             .addVar("acls", listOfDyn)
+            .addVar("quotas", listOfDyn)
             .addVar("cluster", mapStringDyn)
             .addVar("jmx", mapStringDyn)
             .addVar("fs", mapStringDyn)
             .addVar("tls", mapStringDyn)
             .addVar("process", mapStringDyn)
+            .addVar("connect", mapStringDyn)
+            .addVar("schemaregistry", mapStringDyn)
+            .addVar("restproxy", mapStringDyn)
+            .addVar("docs", mapStringDyn)
             .build();
 
         var runtime = CelRuntimeFactory.standardCelRuntimeBuilder().build();
@@ -89,8 +94,8 @@ public final class PolicyEngine {
         for (var c : policy.controls()) {
             if (isPlaceholder(c)) {
                 problems.add(c.id() + ": condition is missing or 'true' with no "
-                    + "attestation/covered_by_kafka_flavor — placeholder controls "
-                    + "silently pass and are not allowed");
+                    + "covered_by_kafka_flavor — placeholder controls silently pass "
+                    + "and are not allowed");
             }
         }
         if (!problems.isEmpty()) {
@@ -104,10 +109,6 @@ public final class PolicyEngine {
         if (hasRealCondition) {
             return false;
         }
-        var att = c.attestation();
-        if (att != null && att.required()) {
-            return false;
-        }
         var covered = c.coveredByKafkaFlavor();
         return covered == null || covered.isEmpty();
     }
@@ -116,37 +117,39 @@ public final class PolicyEngine {
      * Run every control against the collected data.
      *
      * @param availableCollectors collectors that successfully ran (used to gate {@code requires})
-     * @param attestations operator-supplied {@code <controlId, status>} from --attest file
      */
     public ScanResult evaluate(
         Map<String, Object> collectedData,
         String clusterName,
         String kafkaFlavor,
         String kafkaFlavorSource,
-        Set<String> availableCollectors,
-        Map<String, Status> attestations
+        Set<String> availableCollectors
     ) {
         var activation = new HashMap<String, Object>();
         activation.put("brokers", collectedData.getOrDefault("broker", List.of()));
         activation.put("topics", collectedData.getOrDefault("topic", List.of()));
         activation.put("acls", collectedData.getOrDefault("acl", List.of()));
+        activation.put("quotas", collectedData.getOrDefault("quota", List.of()));
         activation.put("cluster", collectedData.getOrDefault("kraft", Map.of()));
         activation.put("jmx", collectedData.getOrDefault("jmx", Map.of()));
         activation.put("fs", collectedData.getOrDefault("fs", Map.of()));
         activation.put("tls", collectedData.getOrDefault("tls", Map.of()));
         activation.put("process", collectedData.getOrDefault("process", Map.of()));
+        activation.put("connect", collectedData.getOrDefault("connect", Map.of()));
+        activation.put("schemaregistry", collectedData.getOrDefault("schemaregistry", Map.of()));
+        activation.put("restproxy", collectedData.getOrDefault("restproxy", Map.of()));
+        activation.put("docs", collectedData.getOrDefault("docs", Map.of()));
 
         List<Finding> findings = new ArrayList<>();
         int passCount = 0;
         int failCount = 0;
         int naCount = 0;
-        int attestationRequiredCount = 0;
         int kafkaFlavorCoveredCount = 0;
         int errorCount = 0;
         int score = 100;
 
         for (var control : policy.controls()) {
-            var status = resolve(control, activation, kafkaFlavor, availableCollectors, attestations);
+            var status = resolve(control, activation, kafkaFlavor, availableCollectors);
 
             switch (status) {
                 case pass -> passCount++;
@@ -160,11 +163,6 @@ public final class PolicyEngine {
                         - WEIGHTS.getOrDefault(control.severity().name(), 5));
                     findings.add(buildFinding(control, Status.fail, kafkaFlavor,
                         "control failed evaluation"));
-                }
-                case attestation_required -> {
-                    attestationRequiredCount++;
-                    findings.add(buildFinding(control, Status.attestation_required, kafkaFlavor,
-                        "operator attestation required"));
                 }
                 case na -> {
                     naCount++;
@@ -206,7 +204,7 @@ public final class PolicyEngine {
         return new ScanResult(
             clusterName, "prod", Instant.now().toString(),
             score, passCount, failCount, naCount,
-            attestationRequiredCount, kafkaFlavorCoveredCount, errorCount,
+            kafkaFlavorCoveredCount, errorCount,
             passRate,
             new ArrayList<>(availableCollectors), collectorsUnavailable,
             findings,
@@ -219,18 +217,11 @@ public final class PolicyEngine {
         Control control,
         Map<String, Object> activation,
         String kafkaFlavor,
-        Set<String> availableCollectors,
-        Map<String, Status> attestations
+        Set<String> availableCollectors
     ) {
         var coveredBy = control.coveredByKafkaFlavor();
         if (coveredBy != null && coveredBy.contains(kafkaFlavor)) {
             return Status.covered_by_flavor;
-        }
-
-        var att = control.attestation();
-        if (att != null && att.required()) {
-            var supplied = attestations.get(control.id());
-            return supplied != null ? supplied : Status.attestation_required;
         }
 
         var requires = control.requires();
@@ -275,7 +266,7 @@ public final class PolicyEngine {
     /** Backwards-compatible shim used by tests; treats the cluster as vanilla. */
     public ScanResult evaluate(Map<String, Object> collectedData, String clusterName) {
         return evaluate(collectedData, clusterName, "vanilla", "default",
-            Set.of("adminclient"), Map.of());
+            Set.of("adminclient"));
     }
 
     public Policy policy() {

@@ -22,26 +22,12 @@ public final class ScanModels {
         String description, String condition, String message, String remediation,
         Compliance compliance,
         @JsonProperty("covered_by_kafka_flavor") List<String> coveredByKafkaFlavor,
-        List<String> requires,
-        Attestation attestation
-    ) {}
-
-    /**
-     * Manual attestation block. Some controls are inherently process/governance
-     * (DR drill done quarterly, key custody documented) and can't be auto-verified.
-     * The operator runs the scanner with --attest <control-id>=yes|no|na to record
-     * status. Without an attestation file the control reports `attestation_required`,
-     * which is neither pass nor fail.
-     */
-    public record Attestation(
-        @JsonProperty("required") boolean required,
-        @JsonProperty("prompt") String prompt,
-        @JsonProperty("evidence_uri") String evidenceUri
+        List<String> requires
     ) {}
 
     public enum Severity { critical, high, medium, low, info }
     public enum Category { security, reliability, operational }
-    public enum Status { pass, fail, na, attestation_required, covered_by_flavor, error }
+    public enum Status { pass, fail, na, covered_by_flavor, error }
 
     public record Compliance(
         @JsonProperty("pci_dss") List<String> pciDss,
@@ -68,7 +54,6 @@ public final class ScanModels {
         @JsonProperty("pass_count") int passCount,
         @JsonProperty("fail_count") int failCount,
         @JsonProperty("na_count") int naCount,
-        @JsonProperty("attestation_required_count") int attestationRequiredCount,
         @JsonProperty("kafka_flavor_covered_count") int kafkaFlavorCoveredCount,
         @JsonProperty("error_count") int errorCount,
         @JsonProperty("pass_rate") double passRate,
