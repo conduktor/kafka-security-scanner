@@ -215,6 +215,18 @@ public final class PolicyEngine {
                     }
                 }
             }
+            if (c.requiresPerMode() != null) {
+                for (var modeReq : c.requiresPerMode().values()) {
+                    if (modeReq == null) {
+                        continue;
+                    }
+                    for (var req : modeReq) {
+                        if (!availableCollectors.contains(req) && !collectorsUnavailable.contains(req)) {
+                            collectorsUnavailable.add(req);
+                        }
+                    }
+                }
+            }
         }
 
         return new ScanResult(
@@ -245,6 +257,29 @@ public final class PolicyEngine {
             for (var req : requires) {
                 if (!availableCollectors.contains(req)) {
                     return Status.na;
+                }
+            }
+        }
+
+        // Mode-conditional requires: only enforce the branch that matches
+        // the detected cluster.mode. Lets ZK-004 demand the `zk` collector
+        // for ZK clusters without dragging it onto KRaft scans.
+        var perMode = control.requiresPerMode();
+        if (perMode != null && !perMode.isEmpty()) {
+            var clusterMap = activation.get("cluster");
+            String mode = "unknown";
+            if (clusterMap instanceof Map<?, ?> m) {
+                var v = m.get("mode");
+                if (v instanceof String s) {
+                    mode = s;
+                }
+            }
+            var modeRequires = perMode.get(mode);
+            if (modeRequires != null) {
+                for (var req : modeRequires) {
+                    if (!availableCollectors.contains(req)) {
+                        return Status.na;
+                    }
                 }
             }
         }

@@ -710,7 +710,9 @@ controls:
     severity: medium
     category: security
     description: "On ZK mode, 4lw.commands.whitelist must be set to a closed list excluding dump/envi/wchs/wchc/wchp/stat/cons/mntr (probed via the 4lw `conf` command). KRaft clusters are exempt."
-    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && 'four_letter_whitelist_strict' in zk && zk.reachable && zk.four_letter_whitelist_strict)"
+    requires_per_mode:
+      zookeeper: [zk]
+    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && zk.reachable && zk.four_letter_whitelist_strict)"
     message: "ZooKeeper 4lw whitelist is open (`*`), unset, or contains a sensitive command (dump/envi/wchs/...)"
     remediation: "Set 4lw.commands.whitelist=ruok,srvr,conf in zoo.cfg (drop dump/envi/wchs/wchc/wchp/stat/cons/mntr)"
     compliance: {pci_dss: ["2.2"], nist: ["CM-7"], cwe: ["200", "749"]}
@@ -741,6 +743,8 @@ controls:
     severity: high
     category: security
     description: "Secure metadata.log.dir with restricted filesystem permissions (700)"
+    requires_per_mode:
+      kraft: [filesystem]
     condition: "cluster.mode == 'zookeeper' || (cluster.mode == 'kraft' && 'files' in fs && 'meta.properties' in fs.files && (fs.files['meta.properties'].perms == '0640' || fs.files['meta.properties'].perms == '0600'))"
     message: "Verify metadata.log.dir has 700 permissions — contains ACLs and topic configs"
     remediation: "chmod 700 on metadata.log.dir, run broker as non-root"

@@ -22,7 +22,8 @@ public final class ScanModels {
         String description, String condition, String message, String remediation,
         Compliance compliance,
         @JsonProperty("covered_by_kafka_flavor") List<String> coveredByKafkaFlavor,
-        List<String> requires
+        List<String> requires,
+        @JsonProperty("requires_per_mode") Map<String, List<String>> requiresPerMode
     ) {}
 
     public enum Severity { critical, high, medium, low, info }
