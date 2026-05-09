@@ -1351,6 +1351,53 @@ controls:
     remediation: "Configure security.protocol=SASL_SSL and least-privilege ACLs for MM2"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3", "SC-8"], cwe: ["287", "306", "862", "319"]}
 
+  # ═══════════════ COLLECTOR-SPECIFIC (4) ═══════════════
+  # Examples wiring filesystem / jmx / tls collectors. Each declares `requires:`;
+  # if the collector isn't enabled the control resolves to `na` (not silent pass).
+  - id: KAFKA-FS-001
+    title: "JAAS file is not world-readable"
+    severity: critical
+    category: security
+    description: "kafka_server_jaas.conf must not have read access for `others` (PCI 7.1, NIST AC-3)"
+    requires: [filesystem]
+    condition: "!fs.jaas_present || !fs.jaas_world_readable"
+    message: "JAAS file is world-readable — credentials exposed to any local user"
+    remediation: "chmod 0640 /etc/kafka/kafka_server_jaas.conf, owner kafka:kafka"
+    compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["732", "276"]}
+
+  - id: KAFKA-FS-002
+    title: "Keystore files are not world-readable"
+    severity: high
+    category: security
+    description: "JKS/PKCS12 keystores must not have read access for `others`"
+    requires: [filesystem]
+    condition: "!fs.any_keystore_world_readable"
+    message: "A keystore file is world-readable — private key material exposed"
+    remediation: "chmod 0640 on every *.jks/*.p12 and restrict to the kafka user/group"
+    compliance: {pci_dss: ["3.5"], nist: ["SC-12", "AC-3"], cwe: ["732", "311"]}
+
+  - id: KAFKA-JMX-001
+    title: "No under-replicated partitions reported by broker"
+    severity: high
+    category: reliability
+    description: "Broker JMX UnderReplicatedPartitions metric must be 0"
+    requires: [jmx]
+    condition: "jmx.under_replicated_partitions == 0 && jmx.offline_partitions_count == 0"
+    message: "Broker reports under-replicated or offline partitions over JMX"
+    remediation: "Investigate failing brokers, check ISR shrink rate and disk health"
+    compliance: {nist: ["SI-4", "CP-10"], cwe: ["778"]}
+
+  - id: KAFKA-TLS-001
+    title: "Broker certificate has more than 30 days before expiry"
+    severity: high
+    category: security
+    description: "Leaf certificate presented during handshake must not be expired or expiring soon"
+    requires: [tls]
+    condition: "!('handshake_ok' in tls) || !tls.handshake_ok || (tls.days_to_expiry >= 30)"
+    message: "Broker TLS certificate expires in less than 30 days (or already expired)"
+    remediation: "Rotate broker certificates; automate via cert-manager / Vault PKI"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-12"], cwe: ["298", "324"]}
+
 scoring:
   weights:
     critical: 15

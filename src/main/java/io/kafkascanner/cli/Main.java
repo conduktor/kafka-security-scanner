@@ -169,6 +169,12 @@ public final class Main implements Runnable {
                 if (enabled.contains("filesystem")) {
                     collectors.add(new io.kafkascanner.collectors.FilesystemCollector());
                 }
+                if (enabled.contains("tls")) {
+                    collectors.add(new io.kafkascanner.collectors.TlsCollector());
+                }
+                if (enabled.contains("process")) {
+                    collectors.add(new io.kafkascanner.collectors.ProcessCollector());
+                }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
                         .collect(java.util.stream.Collectors.joining(",")) + ")...");
