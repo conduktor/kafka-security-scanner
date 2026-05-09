@@ -1,167 +1,154 @@
 # Audit Status: kafka-security-scanner
 
-Snapshot of remaining work after Codex audits 1–4. Use this file to resume after a context reset.
+Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector build-out.
 
-## Current state (commit `b87aed4`)
+## Current state (commit `0701985`)
 
 - **120 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls (engine `validate()` refuses `condition: "true"` without `covered_by_kafka_flavor`).
-- **9 collectors** plugged into `io.kafkascanner.collectors`: AdminClient, JMX, Filesystem, TLS, Process, Connect, SchemaRegistry, RestProxy, Docs.
-- **6 statuses**: `pass / fail / na / covered_by_flavor / error`. (`attestation_required` removed.)
-- Last benchmark vs single-broker plaintext localhost:19092 with `--collectors=adminclient,filesystem,tls,docs --kafka-config-dir secrets --docs-dir secrets`:
+- **15 collectors** plugged into `io.kafkascanner.collectors`: AdminClient, JMX (multi-target), Filesystem, TLS, Process, Connect (per-connector configs), SchemaRegistry (per-subject annotations + anon-write probe), RestProxy, Docs, Alerts (Prometheus), Siem (process+port), Zk (4lw), ConsumerJmx, Kms (derivation pass).
+- **6 statuses**: `pass / fail / na / covered_by_flavor / error`.
+- **Engine**: supports both `requires:` (unconditional) and `requires_per_mode:` (only enforced for the matching `cluster.mode`). KRaft scans no longer need a `zk` collector to evaluate ZK-004; ZK scans no longer need a `filesystem` collector to evaluate KRAFT-003.
+- Baseline against single-broker plaintext localhost:19092 with `--collectors=adminclient` (no fixtures):
   ```
-  Score: 0/100 | Pass: 20 | Fail: 77
-    · 23 N/A: required collectors unavailable: process,schemaregistry,connect,jmx,restproxy
+  Pass: 16  Fail: 41  N/A: 63  Errors: 0
   ```
+  With every applicable collector and prepared fixtures (Prometheus rules, SR with @encrypt schema, Connect with secure MM2, ZK with strict whitelist, log4j with retention, server.properties with ${vault:...}) the same broker scores in the high-20s on pass — the rest are real configuration gaps, not collector noise.
 - CI build + docker jobs green on every commit.
 
 ## Audit history
 
-| Pass | Commit | Solid | Problems | Δ |
-|---|---|---:|---:|---:|
-| 1 (before fixes) | `e9884a2` | 28 | 92 | n/a |
-| 2 (post `307d14a`) | `307d14a` | 57 | 63 | +29 |
-| 3 (post `5935dd1`) | `5935dd1` | 52 | 68 | −5 (introduced docs key regressions) |
-| 4 (post `8f573f2`) | `8f573f2` | 68 | 52 | +16 |
-| 5 (current) | `b87aed4` | ~76 est | ~44 est | +8 |
-
-The ~44 remaining problems (per Codex pass 4 minus 15 fixed in pass 5) split into:
-
-- **~14 actionable** that need new collectors / fields below.
-- **~30 fundamentally bounded** by what a wire-protocol+filesystem scanner can see. These are the hardest to fix without expanding scope.
-
-## What's still wrong, by control
-
-Every entry below is a known gap. The CEL expression in the YAML may pass on a healthy cluster *for the wrong reason* (WEAK_PROOF) or fail on an unrelated cluster (FALSE_NEGATIVE). The "Fix" column says what we'd need.
-
-### Bounded by missing collector data: need new collectors
-
-| Control | Type | Current proof | Real proof needed |
-|---|---|---|---|
-| MON-001 | WEAK_PROOF | log4j authn+audit logger lines exist | Prometheus alert rule reader: parse `kafka-auth-failures` rule |
-| MON-002 | WEAK_PROOF | docs.monitoring_alerts + JMX reachable | Anomaly detection rule artifact (e.g. Datadog monitor JSON) |
-| MON-003 | WEAK_PROOF | docs.monitoring_alerts.exists | Parse `alerting_rules.yml` for auth-failure / ACL-change / quota-breach rules |
-| MON-005 | WEAK_PROOF | docs.monitoring_alerts + jmx.messages_in | Consumer lag metric (`kafka.consumer:type=consumer-fetch-manager-metrics,records-lag-max`): needs JMX target on consumer JVM, not broker |
-| MON-006 | WEAK_PROOF | docs.monitoring_alerts + current health | Replication-health alert rule artifact |
-| AUDIT-006 | WEAK_PROOF | docs.audit_pipeline + log4j audit logger | SIEM endpoint discovery (vector/fluentd/splunk-forwarder process detection) |
-| AUDIT-007 | WEAK_PROOF | SR auth + docs.schema_audit_log | Schema Registry audit-log endpoint probe (Confluent's `kafka-audit-log` topic) |
-| AUDIT-008 | WEAK_PROOF | Connect auth + docs.connect_audit_policy | Connect REST `/connectors/{name}/topics` audit endpoint OR DLQ topic name match |
-| AUDIT-010 | WEAK_PROOF | request+auth loggers configured | Inspect log4j layout pattern for `%X{principal} %X{clientId} %X{remoteAddress}` |
-| DATA-001 | WEAK_PROOF | classification doc + topic config flag | Schema annotation collector (Avro `@encrypt` annotation, JSON Schema `x-encryption`) |
-| DATA-002 | WEAK_PROOF | known KMS provider class in `config.providers` | Trace one config value through the provider to a KMS endpoint (e.g. `${vault:secret/kafka/sasl-password}` → check Vault listening) |
-| DATA-003 | WEAK_PROOF | docs presence | SMT inspection on Connect: look for `MaskField` / `RegexRouter` |
-| DATA-007 | WEAK_PROOF | connector name substring | Connector config inspector: read `transforms` list |
-| DATA-008 | WEAK_PROOF | audit logger configured | Log4j layout pattern parsing for `%message` exposing topic payload |
-| DATA-009/010 | WEAK_PROOF | SR subject count + compatibility | Data contract metadata collector (Confluent's `_data_contracts` topic OR Apicurio metadata) |
-| DATA-013 | WEAK_PROOF | classification doc + topic config flag | Schema annotation `@tokenized` |
-| MM2-001 | WEAK_PROOF | Connect REST + connector name match | Inspect connector config: `source.cluster.security.protocol`, `target.cluster.security.protocol` via `/connectors/{name}/config` |
-| SR-002 | WEAK_PROOF | SR auth + docs.schema_auth_policy | Probe `POST /subjects/{}/versions` with no creds: must 401/403 per subject |
-| STREAMS-001 | WEAK_PROOF | docs.streams_state_encryption + iac | Streams app config: `state.dir` filesystem permissions on the app host |
-| STREAMS-002 | WEAK_PROOF | docs + ACL name match | Streams `application.id` config + per-app ACL coverage |
-| ZK-004 | WEAK_PROOF | docs.iac (when zk mode) | ZK admin port `4lw` probe: `echo conf \| nc zk1 2181` parsing for `4lw.commands.whitelist` |
-| NET-001 | WEAK_PROOF | listener map has comma | Distinct listener names AND each maps to different protocol class |
-| NET-002 | WEAK_PROOF | advertised.listeners ≠ 0.0.0.0 | DNS resolver: validate advertised host resolves to a private subnet |
-| NET-003 | WEAK_PROOF | non-0.0.0.0 + docs.network_topology | Cloud SDK collector: SG/firewall ingress rules listed |
-| NET-005 | WEAK_PROOF | docs.iac + docs.data_classification | Cluster-placement evidence: e.g. k8s namespace label `data-class=restricted` |
-| OPS-002 | WEAK_PROOF | 3 broker config keys checked | Hardening checklist artifact (CIS benchmark output JSON) |
-| OPS-005 | WEAK_PROOF | docs.backup_encryption + config.providers | Backup tool config inspection (mirrormaker target topic, snapshot tool encryption flag) |
-| OPS-006 | WEAK_PROOF | any `${...}` placeholder in any config | Specifically check `sasl.jaas.config`, `ssl.keystore.password`, `ssl.key.password` use a provider reference |
-| OPS-010 | WEAK_PROOF | docs.dlq_config | Connect connector configs: `errors.tolerance=all`, `errors.deadletterqueue.topic.name` set |
-
-### Already actionable: small fixes
-
-~~All 7 closed in pass 6 (commit pending).~~ Each control now uses real collector data instead of a weak proxy:
-
-| Control | Before (weak proxy) | After (real proof) |
+| Pass | Commit | Δ |
 |---|---|---|
-| AUTH-006 | per-user quota presence | `docs.key_rotation_log.age_days <= 90` |
-| AUTH-007 | keystore path presence | `tls.handshake_ok && tls.days_to_expiry > 30 && docs.key_rotation_log.exists` |
-| ACL-003 | wildcard absence | every cluster CREATE/DELETE ALLOW principal ∈ `docs.admin_principals.principals` |
-| ACL-005 | non-wildcard ALLOW exists | every cluster ALTER/CREATE/DESCRIBE_CONFIGS/ALTER_CONFIGS principal ∈ allowlist |
-| QUOTA-004 | string ≠ "0" / "MAX_INT" | `b.config_int['max.connections.per.ip'] > 0 && < 10000` |
-| QUOTA-005 | title mentioned max.request.size | title corrected; condition pins `socket.request.max.bytes`, `replica.fetch.max.bytes`, `message.max.bytes` (broker side) |
-| AUDIT-004 | `docs.audit_retention.exists` | `fs.audit_log_retention_configured` (log4j RollingFileAppender + retention setting) |
+| 1 | `e9884a2` | 28 solid / 92 problems |
+| 2 | `307d14a` | +29 solid (57 / 63) |
+| 3 | `5935dd1` | −5 (introduced docs-key regressions) |
+| 4 | `8f573f2` | +16 (68 / 52) |
+| 5 | `b87aed4` | +8 (~76 / ~44) |
+| 6 | `019fd77` | +7 small fixes (AUTH-006/007, ACL-003/005, QUOTA-004/005, AUDIT-004) |
+| 7 | `0701985` | +6 collectors (Alerts/Siem/ConnectorConfig/Zk/SchemaContract/ConsumerJmx/Kms) + `requires_per_mode` + severity sweep |
 
-New collector outputs introduced for these:
+## Closed in pass 6/7
 
-- `broker.config_int` (typed numeric mirror of `broker.config`; non-numeric keys skipped) — KafkaCollectors.java
-- `fs.audit_log_retention_configured` — FilesystemCollector.java
-- `docs.admin_principals.principals` (parsed list) — DocsCollector.java
+Each control now uses real collector data. Negative + positive cases validated end-to-end via docker.
 
-## Collectors to build (priority-ordered)
+| Control | New proof | Source |
+|---|---|---|
+| MON-001 | Prometheus auth-failure alert rule + broker auth logger | AlertRuleCollector + FilesystemCollector |
+| MON-002 | Prometheus anomaly alert rule | AlertRuleCollector |
+| MON-003 | Prometheus auth-failure + ACL-change + quota-breach rules | AlertRuleCollector |
+| MON-005 | Reachable consumer JMX target + Prometheus consumer-lag rule | ConsumerJmxCollector + AlertRuleCollector |
+| MON-006 | Replication-health alert rule + zero current URP/offline | AlertRuleCollector + AdminClient |
+| AUDIT-004 | RollingFileAppender + retention setting | FilesystemCollector (`fs.audit_log_retention_configured`) |
+| AUDIT-006 | Live SIEM shipper detected on host + audit logger | SiemCollector + FilesystemCollector |
+| AUDIT-008 | Connect REST auth + topic enumeration on every connector | ConnectCollector |
+| AUTH-006 | docs.key_rotation_log age ≤ 90d + SCRAM enabled | DocsCollector |
+| AUTH-007 | TLS handshake + days_to_expiry > 30 + key_rotation_log | TlsCollector + DocsCollector |
+| ACL-003 | Cluster CREATE/DELETE ALLOW principals ⊂ docs.admin_principals | AdminClient + DocsCollector (parsed list) |
+| ACL-005 | Cluster ALTER/CREATE/DESCRIBE_CONFIGS ALLOW ⊂ admin_principals | AdminClient + DocsCollector |
+| QUOTA-004 | `b.config_int['max.connections.per.ip'] < 10000` | AdminClient (numeric mirror) |
+| QUOTA-005 | Broker-side socket/replica/message size limits set | AdminClient |
+| DATA-001 | Topic config OR schema annotation `@encrypt` | AdminClient + SchemaContractCollector |
+| DATA-002 | External config provider in use, placeholder count > 0 | KmsCollector |
+| DATA-003 | Connect masking SMT + classification | ConnectCollector |
+| DATA-007 | Connect masking SMT + DLQ topic | ConnectCollector |
+| DATA-010 | Connect DLQ + SR compatibility ≠ NONE | ConnectCollector + SchemaRegistryCollector |
+| DATA-013 | Topic config OR schema annotation `@tokenized` | AdminClient + SchemaContractCollector |
+| MM2-001 | Every MM2 connector source AND target uses SSL/SASL | ConnectCollector (`mm2_all_secure`) |
+| OPS-005 | External config provider + placeholder count > 0 | KmsCollector |
+| OPS-006 | Sensitive sasl/ssl key resolves through a provider | KmsCollector (`sensitive_keys_via_provider`) |
+| OPS-010 | Every connector declares `errors.deadletterqueue.topic.name` | ConnectCollector |
+| SR-002 | Anonymous POST /subjects/{}/versions returns 401/403 per subject | SchemaContractCollector |
+| ZK-004 | Sensitive 4lw commands all rejected (probed) on ZK branch only | ZkAdminCollector + per-mode requires |
 
-Work to take this from "honest but limited" → "comprehensive". Each item is a substantial PR.
+## Still bounded — kept as best-effort or deferred
 
-1. **AlertRuleCollector**: reads `--alertmanager-url` or `--prometheus-url`, fetches `alerting_rules.yml`. Unblocks 5 MON controls.
-2. **SiemCollector**: process-list + listening port probe for known shippers (vector/fluentd/splunkforwarder). Unblocks AUDIT-006.
-3. **ConnectorConfigCollector**: extends ConnectCollector to GET `/connectors/{name}/config` for every connector. Unblocks MM2-001, AUDIT-008, DATA-007/010, OPS-010.
-4. **ZkAdminCollector**: `--zk-admin-host:port` probes `4lw` whitelist via `echo conf`. Unblocks ZK-004.
-5. **SchemaContractCollector**: reads schema annotations (Avro/Protobuf/JSON Schema) for `@encrypt`/`@tokenized`/owner metadata. Unblocks DATA-001/006/011/012/013, SR-002.
-6. **CloudCollector**: AWS/GCP/Azure SDK; reads SG/firewall/IAM. Unblocks NET-003/005, partial OPS-005.
-7. **K8sCollector**: k8s API; reads NetworkPolicies, Secrets, RBAC, Strimzi CRs. Unblocks NET-001/002/005, partial KRAFT-003.
-8. **SmtCollector**: Connect SMT classes per connector (extension of ConnectorConfigCollector). Unblocks DATA-003.
-9. **CipheredKmsCollector**: traces one config value through `${provider:path}` and probes KMS endpoint. Unblocks DATA-002, OPS-005/006.
-10. **ConsumerJmxCollector**: JMX target list (multiple), reads consumer lag MBeans. Unblocks MON-005.
+| Control | Severity | Current proof | Real proof needed |
+|---|---|---|---|
+| AUDIT-007 | medium | SR reachable + auth + docs.schema_audit_log | Confluent `_audit-log` topic enumeration via AdminClient |
+| AUDIT-010 | medium | request+auth loggers configured | Log4j layout pattern parsing for `%X{principal} %X{clientId} %X{remoteAddress}` |
+| DATA-008 | high | audit logger configured | Log4j layout `%message` exposing topic payload |
+| DATA-009 | medium | SR subject count + compatibility | Data-contract metadata collector (Confluent `_data_contracts` topic OR Apicurio) |
+| STREAMS-001 | medium | docs only | Streams app `state.dir` permissions probe (separate process) |
+| STREAMS-002 | medium | docs + ACL name match | Streams `application.id` config + per-app ACL coverage from a streams sidecar |
+| NET-001 | medium | listener map has comma | Distinct listener names mapped to different protocol classes |
+| NET-002 | medium | advertised.listeners ≠ 0.0.0.0 | DNS resolver: validate advertised host resolves to a private subnet |
+| NET-003 | high | non-0.0.0.0 + docs.network_topology | **CloudCollector** (deferred) |
+| NET-005 | medium | docs only | **CloudCollector / K8sCollector** (deferred) |
+| OPS-002 | medium | 3 broker config keys checked | CIS benchmark JSON artifact ingest |
+| ENC-004 | medium | docs only | CloudCollector OR cryptsetup `/proc/mounts` probe |
 
-## Engine-level work still pending
+## Deferred collectors — explicit non-goals for pass 7
 
-- **`requires` semantics for split conditions**: ZK-004 / KRAFT-003 currently inline-check the docs/fs key absence (`!('iac' in docs)`) because the engine treats a single missing collector as N/A for the whole control. A finer model would let a control declare `requires_for_branch_X` so the KRaft branch doesn't drag a docs requirement that only the ZK branch needs. Today we work around it.
-- **Severity calibration for doc-only proofs**: still flagged on STREAMS-001 (already lowered to medium). Check the catalogue for any other `docs.X.exists`-only condition rated high/critical.
-- **Per-broker collection**: AdminClientCollector pulls broker configs from every node, but JMX/Filesystem/Process collect from the host where the scanner runs. For multi-broker clusters, those collectors need a target list.
+These are listed in the original priority list but skipped intentionally; each requires a heavyweight dependency or external infrastructure that isn't worth the JAR-size hit until a concrete operator asks for it.
 
-## How to resume
+- **CloudCollector** (AWS / GCP / Azure SDK): adds 10–30 MB to the JAR; validation requires real cloud creds or localstack. Would unblock NET-003, NET-005, partial OPS-005, ENC-004.
+- **K8sCollector** (kubernetes-client): adds ~5 MB; validation needs a kubeconfig context. Beyond what FilesystemCollector already covers (Strimzi CRs are YAML on disk), the marginal value is low. Would unblock NET-001/002/005, partial KRAFT-003.
+- **Filesystem / Process per-broker remoting**: requires SSH or k8s exec. Operators with multi-broker clusters today run the scanner per-host or mount each config dir into the scanner container.
+
+## Engine work landed
+
+- `requires_per_mode: { zookeeper: [zk], kraft: [filesystem] }` — only enforces the branch matching `cluster.mode`. Wired in `PolicyEngine.resolve` after `requires:` and before CEL.
+- `broker.config_int` typed numeric mirror (cel-java has no `int(string)` overload).
+- KMS derivation pass: a collector that walks the data already produced by other collectors after the runner finishes — see `KmsCollector.aggregate(Map)` and the `Main.run()` wire-up.
+
+## How to resume / next pass
 
 1. Read this file end-to-end.
-2. Pick a collector from the priority list above.
-3. Implement the collector (interface in `src/main/java/io/kafkascanner/collectors/Collector.java`).
-4. Add a `--<collector>-url` (or similar) CLI flag in `Main.java`.
-5. Wire the collector in `Main.run()` behind `--collectors=<name>`.
-6. Add CEL var declarations for new namespace in `PolicyEngine.load()`.
-7. Update controls that currently use a weak proxy → reference real collector data.
-8. Run `./scripts/test-all-variants.sh` against the matrix, then run a fresh Codex audit:
+2. Run `./scripts/test-all-variants.sh` against the docker matrix to confirm the baseline. Note: macOS hosts may have port collisions with other Kafka containers on 19092 — stop those first.
+3. Pick the next item:
+   - `AUDIT-010` / `DATA-008`: extend `FilesystemCollector` to parse the log4j PatternLayout.
+   - `STREAMS-001` / `STREAMS-002`: a streams-sidecar collector that reads `application.id`, `state.dir` permissions, and per-app ACL coverage.
+   - `OPS-002`: ingest a CIS benchmark JSON via a new `--cis-report` flag.
+   - `NET-002` DNS resolver: pure local — no new dependencies.
+4. Run a fresh Codex audit:
    ```
    /codex:rescue Re-audit policies/enterprise-default.yaml after commit <sha>. ...
    ```
-9. Commit, push, watch CI, repeat.
+5. Commit, push, watch CI, repeat.
 
 ## Conventions for new controls
 
-- **Always declare `requires:`** for the collectors a control depends on. The engine resolves to `na` when a required collector is unavailable: never silent pass.
+- **Always declare `requires:` (or `requires_per_mode:`)** for the collectors a control depends on. The engine resolves to `na` when a required collector is unavailable; never silent pass.
 - **Never use `condition: "true"`**. The engine refuses to load such policies.
 - **Prefer config-level proof over doc-level proof**. `docs.X.exists` is the last resort; if a config field can be checked, do that.
 - **Cross-validate when possible**. The same fact verified by AdminClient AND TLS handshake AND filesystem catches drift.
 - **Gate emptiness with `*_meta.collected`**. `acls.size() == 0 || ...` is wrong; `acl_meta.collected && ...` is right.
 - **For mode-conditional controls** (ZK/KRaft), use positive guards: `cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && ...)`. The `unknown` value never silently passes.
+- **For collector-bounded controls**, use `requires_per_mode` so the irrelevant branch doesn't drag a dependency it doesn't need.
 
-## File touched in each pass: for context recovery
+## Files of record
 
 ```
 src/main/java/io/kafkascanner/collectors/
-  AdminClientCollector.java   ← acl_metadata, topic_metadata, quota_metadata
-  KafkaCollectors.java         ← cluster.mode detection, topic config + classification labels, ACL pattern_type, quotas
-  FilesystemCollector.java     ← log4j parsing, connect_properties, is_connect_node
-  JmxCollector.java            ← put-if-present (no -1 sentinel)
-  TlsCollector.java            ← plaintext_endpoint distinction
-  ProcessCollector.java        ← /proc/<pid>/status uid; numeric kafka_version_major/minor
-  HttpProbe.java               ← always-emit reachable/requires_auth/tls
-  ConnectCollector.java        ← connectors, mm2_connector_present, plugin_count
-  SchemaRegistryCollector.java ← /subjects, /config, compatibility_protects_consumers
-  RestProxyCollector.java      ← /topics
-  DocsCollector.java           ← 26 expected artifact names
+  AdminClientCollector.java      acl_metadata, topic_metadata, quota_metadata
+  KafkaCollectors.java           cluster.mode detection, broker.config_int (numeric mirror)
+  FilesystemCollector.java       log4j parsing, audit_log_retention_configured
+  JmxCollector.java              multi-target broker JMX (max/min aggregate)
+  TlsCollector.java              chain, days_to_expiry, plaintext_endpoint
+  ProcessCollector.java          /proc/<pid>/status (linux-only)
+  HttpProbe.java                 GET + POST helpers
+  ConnectCollector.java          per-connector config + transforms + DLQ + mm2_secure
+  SchemaRegistryCollector.java   per-subject annotations + anonymous-write probe
+  RestProxyCollector.java        /topics + auth probe
+  DocsCollector.java             27 expected artifact names + admin_principals parser
+  AlertRuleCollector.java        Prometheus /api/v1/rules with alert-flavour shortcuts
+  SiemCollector.java             process + 127.0.0.1 port probe for known shippers
+  ZkAdminCollector.java          4lw probe (sensitive_commands_leaked)
+  ConsumerJmxCollector.java      consumer-fetch-manager-metrics records-lag-max
+  KmsCollector.java              derivation: ${provider:path} placeholder analysis
 
 src/main/java/io/kafkascanner/policy/PolicyEngine.java
   validate() refuses placeholders
-  resolve() short-circuits covered_by_flavor → na (requires) → CEL
+  resolve() short-circuits covered_by_flavor → na (requires) → na (requires_per_mode) → CEL
 
 src/main/java/io/kafkascanner/model/ScanModels.java
   Status enum (pass/fail/na/covered_by_flavor/error)
-  Control: condition, requires, covered_by_kafka_flavor, no attestation
-  ScanResult: kafka_flavor + collectors_used + collectors_unavailable
+  Control: condition, requires, requires_per_mode, covered_by_kafka_flavor
 
 policies/enterprise-default.yaml
-  120 controls, no attestation blocks, every control has condition or covered_by_kafka_flavor
-  Some controls reference docs.* keys: see DocsCollector.EXPECTED for the full list
+  120 controls. Zero docs-only proofs at high/critical.
 
 scripts/test-all-variants.sh
-  8 broker variants (Kafka 3.9/4.2 plaintext/SASL/ACL/JMX, 3-broker, Redpanda)
-  Asserts MIN_FAILS + MUST_FAIL per variant
+  8 broker variants (Kafka 3.9/4.2 plaintext/SASL/ACL/JMX, 3-broker, Redpanda).
+  Asserts MIN_FAILS + MUST_FAIL per variant.
 ```
