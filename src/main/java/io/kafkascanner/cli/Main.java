@@ -3,7 +3,10 @@ package io.kafkascanner.cli;
 import static io.kafkascanner.model.ScanModels.ScanResult;
 import static io.kafkascanner.model.ScanModels.Severity;
 
-import io.kafkascanner.collectors.KafkaCollectors;
+import io.kafkascanner.collectors.AdminClientCollector;
+import io.kafkascanner.collectors.Collector;
+import io.kafkascanner.collectors.CollectorContext;
+import io.kafkascanner.collectors.CollectorRunner;
 import io.kafkascanner.flavor.FlavorDetector;
 import io.kafkascanner.policy.PolicyEngine;
 import io.kafkascanner.reports.Reporters;
@@ -94,6 +97,20 @@ public final class Main implements Runnable {
                 + "auto-verified.")
     private String attestFile;
 
+    @Option(names = {"--collectors"}, defaultValue = "adminclient",
+            description = "Comma-separated collectors to enable: "
+                + "adminclient,jmx,filesystem (default: adminclient)")
+    private String collectorsCsv;
+
+    @Option(names = {"--kafka-config-dir"}, defaultValue = "",
+            description = "Local path to broker config directory for the filesystem collector "
+                + "(usually /etc/kafka or /opt/kafka/config)")
+    private String kafkaConfigDir;
+
+    @Option(names = {"--jmx-host-port"}, defaultValue = "",
+            description = "host:port of broker JMX endpoint for the jmx collector (e.g. localhost:9999)")
+    private String jmxHostPort;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -131,10 +148,33 @@ public final class Main implements Runnable {
             }
 
             try (var admin = AdminClient.create(props)) {
-                System.out.println("Collecting cluster data...");
-                var data = KafkaCollectors.collectAll(admin, 6, timeout);
+                var saslProps = new java.util.HashMap<String, String>();
+                for (var name : props.stringPropertyNames()) {
+                    saslProps.put(name, props.getProperty(name));
+                }
+                var ctx = new CollectorContext(
+                    bootstrap, Duration.ofSeconds(timeout), admin,
+                    kafkaConfigDir.isBlank() ? null : kafkaConfigDir,
+                    jmxHostPort.isBlank() ? null : jmxHostPort,
+                    java.util.Map.copyOf(saslProps), detection.flavor()
+                );
+                var enabled = CollectorRunner.parseNames(collectorsCsv);
+                var collectors = new java.util.ArrayList<Collector>();
+                if (enabled.contains("adminclient")) {
+                    collectors.add(new AdminClientCollector());
+                }
+                if (enabled.contains("jmx")) {
+                    collectors.add(new io.kafkascanner.collectors.JmxCollector());
+                }
+                if (enabled.contains("filesystem")) {
+                    collectors.add(new io.kafkascanner.collectors.FilesystemCollector());
+                }
+                System.out.println("Collecting cluster data ("
+                    + collectors.stream().map(Collector::name)
+                        .collect(java.util.stream.Collectors.joining(",")) + ")...");
+                var outcome = CollectorRunner.run(collectors, ctx);
 
-                var brokerData = data.get("broker");
+                var brokerData = outcome.data().get("broker");
                 if (brokerData == null
                     || (brokerData instanceof java.util.List<?> bl && bl.isEmpty())) {
                     System.err.println("Scan error: no broker data collected (cluster unreachable?)");
@@ -144,9 +184,9 @@ public final class Main implements Runnable {
                 System.out.println("Evaluating " + engine.policy().controls().size() + " controls...");
                 var displayName = clusterName.isBlank() ? bootstrap : clusterName;
                 var attestations = loadAttestations(attestFile);
-                var availableCollectors = java.util.Set.of("adminclient");
-                var result = engine.evaluate(data, displayName, detection.flavor(), detection.source(),
-                    availableCollectors, attestations);
+                var result = engine.evaluate(outcome.data(), displayName,
+                    detection.flavor(), detection.source(),
+                    outcome.ran(), attestations);
 
                 printTerminal(result);
 
