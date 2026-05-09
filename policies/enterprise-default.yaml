@@ -78,7 +78,7 @@ controls:
     severity: medium
     category: security
     description: "Restrict enabled SASL mechanisms to only required ones"
-    condition: "brokers.all(b, 'config' in b && 'sasl.enabled.mechanisms' in b.config && (b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-256') || b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-512') || b.config['sasl.enabled.mechanisms'].contains('GSSAPI') || b.config['sasl.enabled.mechanisms'].contains('OAUTHBEARER')))"
+    condition: "brokers.all(b, 'config' in b && 'sasl.enabled.mechanisms' in b.config && (b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-256') || b.config['sasl.enabled.mechanisms'].contains('SCRAM-SHA-512') || b.config['sasl.enabled.mechanisms'].contains('GSSAPI') || b.config['sasl.enabled.mechanisms'].contains('OAUTHBEARER')) && !b.config['sasl.enabled.mechanisms'].contains('PLAIN') && !b.config['sasl.enabled.mechanisms'].contains('CRAM-MD5') && !b.config['sasl.enabled.mechanisms'].contains('DIGEST-MD5'))"
     message: "SASL mechanism allowlist not explicitly configured"
     remediation: "Set sasl.enabled.mechanisms to only required mechanisms (e.g. SCRAM-SHA-512)"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
@@ -98,7 +98,7 @@ controls:
     severity: medium
     category: security
     description: "Use short-lived OAuth/OIDC tokens for SASL/OAUTHBEARER"
-    condition: "brokers.all(b, 'config' in b && 'connections.max.reauth.ms' in b.config && b.config['connections.max.reauth.ms'].size() > 0 && b.config['connections.max.reauth.ms'] != '0' && b.config['connections.max.reauth.ms'] != '-1')"
+    condition: "brokers.all(b, !('config' in b && 'sasl.enabled.mechanisms' in b.config && b.config['sasl.enabled.mechanisms'].contains('OAUTHBEARER')) || ('connections.max.reauth.ms' in b.config && b.config['connections.max.reauth.ms'].size() > 0 && b.config['connections.max.reauth.ms'] != '0' && b.config['connections.max.reauth.ms'] != '-1'))"
     message: "If using OAuth, ensure short-lived tokens with audience/issuer validation"
     remediation: "Configure token lifetime < 1 hour and validate issuer/audience"
     compliance: {pci_dss: ["8.2"], nist: ["IA-5", "IA-8"], cwe: ["287", "522"]}
@@ -108,7 +108,7 @@ controls:
     severity: medium
     category: security
     description: "Use unique principals and client IDs per application or tenant"
-    condition: "acl_meta.collected && acl_meta.count > 0 && acl_meta.distinct_principal_count >= 2"
+    condition: "acl_meta.collected && acl_meta.distinct_principal_count >= 2 && !acls.exists(a, a.principal == 'User:*' || a.principal == 'User:ANONYMOUS' || a.principal == '*')"
     message: "Ensure unique principals per application for audit and quota isolation"
     remediation: "Assign unique service accounts per application/tenant"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
@@ -149,7 +149,7 @@ controls:
     severity: critical
     category: security
     description: "All client-facing listeners must use SSL or SASL_SSL protocol"
-    condition: "brokers.all(b, 'config' in b && 'listener.security.protocol.map' in b.config && !b.config['listener.security.protocol.map'].matches('(?i).*[A-Z_]+:PLAINTEXT($|,).*'))"
+    condition: "brokers.all(b, 'config' in b && 'listener.security.protocol.map' in b.config && !b.config['listener.security.protocol.map'].matches('(?i).*[A-Z0-9_-]+:PLAINTEXT($|,).*'))"
     message: "One or more client listeners use PLAINTEXT — data exposed in transit"
     remediation: "Configure listeners with SSL:// or SASL_SSL:// protocol"
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
@@ -159,7 +159,7 @@ controls:
     severity: high
     category: security
     description: "Enable TLS for broker-to-ZooKeeper communication"
-    condition: "cluster.mode != 'zookeeper' || brokers.all(b, 'config' in b && 'zookeeper.ssl.client.enable' in b.config && b.config['zookeeper.ssl.client.enable'] == 'true')"
+    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && brokers.all(b, 'config' in b && 'zookeeper.ssl.client.enable' in b.config && b.config['zookeeper.ssl.client.enable'] == 'true'))"
     message: "ZooKeeper communication is not encrypted"
     remediation: "Set zookeeper.ssl.client.enable=true"
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
@@ -191,7 +191,7 @@ controls:
     severity: medium
     category: security
     description: "Configure strong AEAD cipher suites (GCM, ChaCha20-Poly1305)"
-    condition: "brokers.all(b, 'config' in b && 'ssl.cipher.suites' in b.config && b.config['ssl.cipher.suites'].size() > 0 && !b.config['ssl.cipher.suites'].contains('RC4') && !b.config['ssl.cipher.suites'].contains('3DES') && !b.config['ssl.cipher.suites'].contains('NULL'))"
+    condition: "brokers.all(b, 'config' in b && 'ssl.cipher.suites' in b.config && b.config['ssl.cipher.suites'].size() > 0 && b.config['ssl.cipher.suites'].contains('GCM') && !b.config['ssl.cipher.suites'].contains('RC4') && !b.config['ssl.cipher.suites'].contains('3DES') && !b.config['ssl.cipher.suites'].contains('NULL') && !b.config['ssl.cipher.suites'].contains('MD5') && !b.config['ssl.cipher.suites'].contains('EXPORT') && !b.config['ssl.cipher.suites'].contains('DES-CBC'))"
     message: "Cipher suites not explicitly configured — may use weak defaults"
     remediation: "Set ssl.cipher.suites to TLS_AES_256_GCM_SHA384 and other AEAD ciphers"
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["326", "327"]}
@@ -202,7 +202,7 @@ controls:
     category: security
     description: "Configure ssl.truststore with trusted CA certificates"
     requires: [tls]
-    condition: "brokers.all(b, 'config' in b && 'ssl.truststore.location' in b.config && b.config['ssl.truststore.location'].size() > 0) && (!('handshake_ok' in tls) || tls.plaintext_endpoint || tls.handshake_ok)"
+    condition: "brokers.all(b, 'config' in b && 'ssl.truststore.location' in b.config && b.config['ssl.truststore.location'].size() > 0) && 'handshake_ok' in tls && tls.handshake_ok"
     message: "Truststore not configured — certificates not validated"
     remediation: "Set ssl.truststore.location and ssl.truststore.password"
     compliance: {pci_dss: ["4.1"], nist: ["SC-17", "SC-12"], cwe: ["295", "296", "297"]}
@@ -245,7 +245,7 @@ controls:
     severity: high
     category: security
     description: "Restrict topic read access with explicit ACLs"
-    condition: "acls.exists(a, a.resource_type == 'TOPIC' && a.operation == 'READ' && a.permission_type == 'ALLOW')"
+    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'TOPIC' && a.operation == 'READ' && a.permission_type == 'ALLOW')"
     message: "No ACLs configured — all users can read all topics"
     remediation: "Use kafka-acls.sh --operation Read to restrict topic read access"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
@@ -255,7 +255,7 @@ controls:
     severity: high
     category: security
     description: "Restrict topic write access with explicit ACLs"
-    condition: "acls.exists(a, a.resource_type == 'TOPIC' && a.operation == 'WRITE' && a.permission_type == 'ALLOW')"
+    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'TOPIC' && a.operation == 'WRITE' && a.permission_type == 'ALLOW')"
     message: "No write ACLs configured — unauthorized data injection possible"
     remediation: "Use kafka-acls.sh --operation Write to restrict topic write access"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
@@ -275,7 +275,7 @@ controls:
     severity: medium
     category: security
     description: "Restrict consumer group access with explicit ACLs"
-    condition: "acls.exists(a, a.resource_type == 'GROUP' && a.operation == 'READ' && a.permission_type == 'ALLOW')"
+    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'GROUP' && a.operation == 'READ' && a.permission_type == 'ALLOW')"
     message: "No consumer group ACLs — any consumer can join any group"
     remediation: "Use kafka-acls.sh --group to restrict consumer group access"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862"]}
@@ -295,7 +295,7 @@ controls:
     severity: critical
     category: security
     description: "Set allow.everyone.if.no.acl.found=false"
-    condition: "brokers.all(b, 'config' in b && 'allow.everyone.if.no.acl.found' in b.config && b.config['allow.everyone.if.no.acl.found'] == 'false')"
+    condition: "acl_meta.collected && brokers.all(b, 'config' in b && 'allow.everyone.if.no.acl.found' in b.config && b.config['allow.everyone.if.no.acl.found'] == 'false') && brokers.all(b, 'config' in b && 'authorizer.class.name' in b.config && b.config['authorizer.class.name'].size() > 0)"
     message: "Default allow policy — unauthenticated users can access resources"
     remediation: "Set allow.everyone.if.no.acl.found=false"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "284"]}
@@ -305,7 +305,7 @@ controls:
     severity: low
     category: security
     description: "Use prefixed resource patterns for scalable ACL management"
-    condition: "acls.exists(a, a.pattern_type == 'PREFIXED')"
+    condition: "acl_meta.collected && acls.exists(a, a.pattern_type == 'PREFIXED')"
     message: "Consider using prefixed ACLs (e.g. 'myapp-*') for topic groups"
     remediation: "Define prefixed ACL patterns like 'myapp-*' for topic groups"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
@@ -315,7 +315,7 @@ controls:
     severity: medium
     category: security
     description: "Restrict transactional ID access with ACLs"
-    condition: "acls.exists(a, a.resource_type == 'TRANSACTIONAL_ID')"
+    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'TRANSACTIONAL_ID')"
     message: "Verify transactional ID ACLs if using transactions"
     remediation: "Use kafka-acls.sh --transactional-id to restrict transaction IDs"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "639"]}
@@ -325,7 +325,7 @@ controls:
     severity: medium
     category: security
     description: "Configure ACLs for idempotent producers"
-    condition: "acls.exists(a, a.resource_type == 'CLUSTER' && a.operation == 'IDEMPOTENT_WRITE' && a.permission_type == 'ALLOW')"
+    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'CLUSTER' && a.operation == 'IDEMPOTENT_WRITE' && a.permission_type == 'ALLOW')"
     message: "If using idempotent producers, verify IdempotentWrite ACLs"
     remediation: "Set IdempotentWrite ACLs for idempotent producer applications"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862"]}
@@ -465,7 +465,7 @@ controls:
     category: security
     description: "Audit schema registrations, compatibility changes, and deletions"
     requires: [schemaregistry, docs]
-    condition: "schemaregistry.requires_auth && docs.schema_audit_log.exists"
+    condition: "schemaregistry.reachable && schemaregistry.requires_auth && docs.schema_audit_log.exists"
     message: "Schema Registry audit requires Schema Registry collector"
     remediation: "Enable Schema Registry audit logging"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
@@ -476,7 +476,7 @@ controls:
     category: security
     description: "Audit Connect connector create/update/pause/delete operations"
     requires: [connect, docs]
-    condition: "connect.requires_auth && docs.connect_audit_policy.exists"
+    condition: "connect.reachable && connect.requires_auth && docs.connect_audit_policy.exists"
     message: "Connect audit requires Connect collector"
     remediation: "Enable Kafka Connect audit logging"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
@@ -509,7 +509,7 @@ controls:
     severity: high
     category: reliability
     description: "Set replication.factor >= 3 and min.insync.replicas >= 2 on critical topics"
-    condition: "topic_meta.collected && topics.all(t, t.replication_factor >= 3 && t.min_insync_replicas >= 2)"
+    condition: "topic_meta.collected && topic_meta.count > 0 && topics.all(t, t.replication_factor >= 3 && t.min_insync_replicas >= 2)"
     message: "Replication factor below 3 or min ISR below 2 — data loss risk on broker failure"
     remediation: "Set replication.factor >= 3, min.insync.replicas >= 2, acks=all on producers"
     compliance: {nist: ["CP-2", "CP-10"]}
@@ -542,7 +542,7 @@ controls:
     severity: medium
     category: reliability
     description: "Configure producer_byte_rate quota to prevent resource exhaustion"
-    condition: "quotas.exists(q, q.has_producer_byte_rate)"
+    condition: "quota_meta.collected && quotas.exists(q, q.has_producer_byte_rate)"
     message: "Producer byte rate quotas not enforced — malicious producer could exhaust resources"
     remediation: "Set producer_byte_rate quotas via kafka-configs.sh"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -552,7 +552,7 @@ controls:
     severity: medium
     category: reliability
     description: "Configure consumer_byte_rate quota"
-    condition: "quotas.exists(q, q.has_consumer_byte_rate)"
+    condition: "quota_meta.collected && quotas.exists(q, q.has_consumer_byte_rate)"
     message: "Consumer byte rate quotas prevent denial of service through excessive consumption"
     remediation: "Set consumer_byte_rate quotas via kafka-configs.sh"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -562,7 +562,7 @@ controls:
     severity: medium
     category: reliability
     description: "Configure request_percentage quota to limit CPU usage per client"
-    condition: "quotas.exists(q, q.has_request_percentage)"
+    condition: "quota_meta.collected && quotas.exists(q, q.has_request_percentage)"
     message: "Request rate quotas prevent CPU exhaustion"
     remediation: "Set request_percentage quotas via kafka-configs.sh"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -582,7 +582,7 @@ controls:
     severity: medium
     category: reliability
     description: "Set max.request.size, socket.request.max.bytes, replica.fetch.max.bytes"
-    condition: "brokers.all(b, 'config' in b && 'socket.request.max.bytes' in b.config && 'replica.fetch.max.bytes' in b.config)"
+    condition: "brokers.all(b, 'config' in b && 'socket.request.max.bytes' in b.config && 'replica.fetch.max.bytes' in b.config && 'message.max.bytes' in b.config)"
     message: "Request size limits prevent memory exhaustion from oversized payloads"
     remediation: "Set max.request.size, socket.request.max.bytes, replica.fetch.max.bytes"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -592,7 +592,7 @@ controls:
     severity: medium
     category: reliability
     description: "Set controller_mutation_rate quotas in KRaft to limit metadata changes"
-    condition: "quotas.exists(q, q.has_controller_mutation_rate)"
+    condition: "quota_meta.collected && quotas.exists(q, q.has_controller_mutation_rate)"
     message: "Controller mutation rate quota available in Kafka 3.0+ for KRaft"
     remediation: "Set controller_mutation_rate quota via kafka-configs.sh (Kafka 3.0+)"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -602,7 +602,7 @@ controls:
     severity: medium
     category: reliability
     description: "Configure connection_creation_rate quotas to throttle new connections"
-    condition: "quotas.exists(q, q.has_connection_creation_rate)"
+    condition: "quota_meta.collected && quotas.exists(q, q.has_connection_creation_rate)"
     message: "Connection creation rate quotas mitigate connection storms (Kafka 2.8+)"
     remediation: "Set connection_creation_rate quota via kafka-configs.sh (Kafka 2.8+)"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770", "799"]}
@@ -612,7 +612,7 @@ controls:
     severity: medium
     category: security
     description: "Apply per-IP quotas for producer/consumer rates"
-    condition: "quotas.exists(q, q.scoped_to_ip)"
+    condition: "quota_meta.collected && quotas.exists(q, q.scoped_to_ip)"
     message: "IP-based quotas limit unauthenticated abuse"
     remediation: "Set entity-type ips quotas for producer/consumer rates"
     compliance: {nist: ["SC-5", "SC-6"], cwe: ["770"]}
@@ -706,7 +706,8 @@ controls:
     severity: medium
     category: security
     description: "Restrict ZooKeeper 4lw commands to reduce information exposure"
-    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && cluster.quorum_size >= 3)"
+    requires: [docs]
+    condition: "cluster.mode == 'kraft' || (cluster.mode == 'zookeeper' && docs.iac.exists)"
     message: "Restrict 4lw.commands.whitelist to reduce information exposure"
     remediation: "Set 4lw.commands.whitelist to only required commands"
     compliance: {pci_dss: ["2.2"], nist: ["CM-7"], cwe: ["200", "749"]}
@@ -772,7 +773,7 @@ controls:
     category: security
     description: "Use ConfigProvider to externalize secrets from connector configs"
     requires: [filesystem]
-    condition: "'connect_properties' in fs && 'config.providers' in fs.connect_properties && fs.connect_properties['config.providers'].size() > 0"
+    condition: "!('connect_properties' in fs) || ('config.providers' in fs.connect_properties && fs.connect_properties['config.providers'].size() > 0)"
     message: "Secrets should be externalized via ConfigProvider, not stored in connector configs"
     remediation: "Use FileConfigProvider or Vault ConfigProvider for secrets"
     compliance: {pci_dss: ["3.4"], nist: ["IA-5", "SC-28"], cwe: ["522", "798", "312"]}
@@ -805,7 +806,7 @@ controls:
     category: security
     description: "Set connector.client.config.override.policy=None"
     requires: [filesystem]
-    condition: "'connect_properties' in fs && 'connector.client.config.override.policy' in fs.connect_properties && fs.connect_properties['connector.client.config.override.policy'] == 'None'"
+    condition: "!('connect_properties' in fs) || ('connector.client.config.override.policy' in fs.connect_properties && fs.connect_properties['connector.client.config.override.policy'] == 'None')"
     message: "Connector config override policy should be restrictive"
     remediation: "Set connector.client.config.override.policy=None or restrictive policy"
     compliance: {pci_dss: ["7.1"], nist: ["AC-6"], cwe: ["284"]}
@@ -816,7 +817,7 @@ controls:
     category: security
     description: "Restrict plugin.path to approved connector directories"
     requires: [filesystem]
-    condition: "'connect_properties' in fs && 'plugin.path' in fs.connect_properties && fs.connect_properties['plugin.path'].size() > 0 && fs.connect_properties['plugin.path'].contains('/')"
+    condition: "!('connect_properties' in fs) || ('plugin.path' in fs.connect_properties && fs.connect_properties['plugin.path'].size() > 0 && fs.connect_properties['plugin.path'].contains('/') && fs.connect_properties['plugin.path'] != '/usr/share/java')"
     message: "Plugin path should be restricted to approved connector directories"
     remediation: "Set plugin.path to approved directories with read-only permissions"
     compliance: {pci_dss: ["2.2"], nist: ["CM-7", "SI-7"], cwe: ["829"]}
@@ -826,7 +827,7 @@ controls:
     severity: high
     category: security
     description: "Secure Connect internal topics with ACLs and encryption"
-    condition: "acl_meta.collected && acls.exists(a, a.permission_type == 'ALLOW' && (a.resource_name == 'connect-configs' || a.resource_name.startsWith('connect-config'))) && acls.exists(a, a.permission_type == 'ALLOW' && (a.resource_name == 'connect-offsets' || a.resource_name.startsWith('connect-offset'))) && acls.exists(a, a.permission_type == 'ALLOW' && (a.resource_name == 'connect-status' || a.resource_name.startsWith('connect-status')))"
+    condition: "acl_meta.collected && acls.exists(a, a.resource_type == 'TOPIC' && a.permission_type == 'ALLOW' && (a.resource_name == 'connect-configs' || a.resource_name.startsWith('connect-config'))) && acls.exists(a, a.resource_type == 'TOPIC' && a.permission_type == 'ALLOW' && (a.resource_name == 'connect-offsets' || a.resource_name.startsWith('connect-offset'))) && acls.exists(a, a.resource_type == 'TOPIC' && a.permission_type == 'ALLOW' && (a.resource_name == 'connect-status' || a.resource_name.startsWith('connect-status')))"
     message: "Connect internal topics contain connector configs and credentials — must be secured"
     remediation: "Add ACLs and enable encryption for config/offset/status storage topics"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "SC-28"], cwe: ["862", "312"]}
@@ -925,7 +926,7 @@ controls:
     category: operational
     description: "Use log compaction for topics requiring data erasure (GDPR right to be forgotten)"
     requires: [docs]
-    condition: "topic_meta.collected && docs.data_classification.exists && topics.exists(t, !t.internal && t.cleanup_policy.contains('compact'))"
+    condition: "docs.data_classification.exists && (topic_meta.collected && topics.exists(t, !t.internal && t.cleanup_policy.contains('compact')))"
     message: "Compacted topics enable GDPR-compliant data erasure"
     remediation: "Use cleanup.policy=compact for topics subject to GDPR deletion requests"
     compliance: {pci_dss: ["3.1"], nist: ["MP-6"], cwe: ["212"]}
@@ -989,7 +990,7 @@ controls:
     severity: medium
     category: operational
     description: "Capture end-to-end data lineage for sensitive topics"
-    condition: "topic_meta.collected && topics.filter(t, t.has_classification).all(t, t.owner.size() > 0)"
+    condition: "topic_meta.collected && topics.exists(t, t.has_classification) && topics.filter(t, t.has_classification).all(t, t.owner.size() > 0)"
     message: "Data lineage enables audit impact analysis and compliance reporting"
     remediation: "Track data lineage from source to consumer for sensitive topics"
     compliance: {pci_dss: ["10.2"], nist: ["AU-3", "AU-12"], cwe: ["778", "223"]}
@@ -1021,7 +1022,7 @@ controls:
     severity: high
     category: operational
     description: "Maintain regular patching schedule for Kafka brokers and client libraries"
-    requires: [process]
+    requires: [process, docs]
     condition: "'kafka_version_major' in process && process.kafka_version_major >= 3 && docs.patching_log.exists && docs.patching_log.age_days <= 30"
     covered_by_kafka_flavor: [confluent-cloud, aws-msk, aiven, redpanda-cloud, azure-eventhubs]
     message: "Subscribe to Kafka security mailing list and monitor CVE databases"
@@ -1087,7 +1088,7 @@ controls:
     category: security
     description: "Run brokers as non-root and restrict filesystem permissions"
     requires: [process]
-    condition: "'uid' in process && !process.running_as_root && process.open_files_soft >= 100000"
+    condition: "'uid' in process && 'open_files_soft' in process && !process.running_as_root && process.open_files_soft >= 100000"
     message: "Brokers should run as dedicated non-root user with restricted file permissions"
     remediation: "Create kafka user, chmod 750 on log.dirs/config/keystore/truststore"
     compliance: {pci_dss: ["2.2"], nist: ["AC-6", "CM-6"], cwe: ["732", "276"]}
@@ -1160,7 +1161,7 @@ controls:
 
   - id: KAFKA-MON-003
     title: "Security alerts configured"
-    severity: high
+    severity: medium
     category: operational
     description: "Configure alerts for auth failures, ACL changes, quota breaches"
     requires: [docs]
@@ -1205,7 +1206,7 @@ controls:
   # ═══════════════ KAFKA STREAMS (2) ═══════════════
   - id: KAFKA-STREAMS-001
     title: "Streams state store encryption [ecosystem]"
-    severity: high
+    severity: medium
     category: security
     description: "Encrypt Kafka Streams local state stores (RocksDB)"
     requires: [docs]
@@ -1280,7 +1281,7 @@ controls:
     category: reliability
     description: "Broker JMX UnderReplicatedPartitions metric must be 0"
     requires: [jmx]
-    condition: "jmx.under_replicated_partitions == 0 && jmx.offline_partitions_count == 0"
+    condition: "'under_replicated_partitions' in jmx && 'offline_partitions_count' in jmx && jmx.under_replicated_partitions == 0 && jmx.offline_partitions_count == 0"
     message: "Broker reports under-replicated or offline partitions over JMX"
     remediation: "Investigate failing brokers, check ISR shrink rate and disk health"
     compliance: {nist: ["SI-4", "CP-10"], cwe: ["778"]}
@@ -1291,7 +1292,7 @@ controls:
     category: security
     description: "Leaf certificate presented during handshake must not be expired or expiring soon"
     requires: [tls]
-    condition: "'handshake_ok' in tls && (tls.plaintext_endpoint || (tls.handshake_ok && tls.days_to_expiry >= 30))"
+    condition: "'handshake_ok' in tls && !tls.plaintext_endpoint && tls.handshake_ok && tls.days_to_expiry >= 30"
     message: "Broker TLS certificate expires in less than 30 days (or already expired)"
     remediation: "Rotate broker certificates; automate via cert-manager / Vault PKI"
     compliance: {pci_dss: ["4.1"], nist: ["SC-12"], cwe: ["298", "324"]}

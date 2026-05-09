@@ -74,6 +74,7 @@ public final class PolicyEngine {
             .addVar("acls", listOfDyn)
             .addVar("acl_meta", mapStringDyn)
             .addVar("quotas", listOfDyn)
+            .addVar("quota_meta", mapStringDyn)
             .addVar("cluster", mapStringDyn)
             .addVar("jmx", mapStringDyn)
             .addVar("fs", mapStringDyn)
@@ -134,6 +135,7 @@ public final class PolicyEngine {
         activation.put("acl_meta", collectedData.getOrDefault("acl_metadata", Map.of()));
         activation.put("topic_meta", collectedData.getOrDefault("topic_metadata", Map.of()));
         activation.put("quotas", collectedData.getOrDefault("quota", List.of()));
+        activation.put("quota_meta", collectedData.getOrDefault("quota_metadata", Map.of()));
         activation.put("cluster", collectedData.getOrDefault("kraft", Map.of()));
         activation.put("jmx", collectedData.getOrDefault("jmx", Map.of()));
         activation.put("fs", collectedData.getOrDefault("fs", Map.of()));

@@ -73,6 +73,15 @@ public final class AdminClientCollector implements Collector {
         topicMeta.put("count", (long) topicList.size());
         data.put("topic_metadata", topicMeta);
 
+        @SuppressWarnings("unchecked")
+        var quotaList = data.get("quota") instanceof java.util.List<?> l
+            ? (java.util.List<Map<String, Object>>) l
+            : java.util.List.<Map<String, Object>>of();
+        var quotaMeta = new java.util.HashMap<String, Object>();
+        quotaMeta.put("collected", data.containsKey("quota"));
+        quotaMeta.put("count", (long) quotaList.size());
+        data.put("quota_metadata", quotaMeta);
+
         return data;
     }
 
