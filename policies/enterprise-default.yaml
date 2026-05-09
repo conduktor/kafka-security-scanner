@@ -453,14 +453,14 @@ controls:
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
   - id: KAFKA-AUDIT-006
-    title: "Log integrity and SIEM forwarding"
+    title: "SIEM forwarding (live shipper) + broker audit logger"
     severity: high
     category: security
-    description: "Forward audit logs to centralized storage with integrity protection"
-    requires: [docs, filesystem]
-    condition: "docs.audit_pipeline.exists && 'files' in fs && fs.audit_logger_configured"
-    message: "Audit logs should be forwarded to SIEM (Splunk/ELK) with WORM storage"
-    remediation: "Forward logs to centralized SIEM, protect with WORM storage or restricted access"
+    description: "A log-shipper (vector/fluentd/filebeat/auditbeat/splunkforwarder/...) must be running on the broker host AND broker-side audit logger must be configured"
+    requires: [siem, filesystem]
+    condition: "siem.detected && 'files' in fs && fs.audit_logger_configured"
+    message: "No SIEM shipper detected on broker host or no kafka.authorizer.logger configured — audit trail is not forwarded"
+    remediation: "Deploy a SIEM shipper (vector/fluentd/filebeat/splunkforwarder) on every broker; keep kafka.authorizer.logger at INFO+"
     compliance: {pci_dss: ["10.5"], nist: ["AU-4", "AU-9"], cwe: ["778"]}
 
   - id: KAFKA-AUDIT-007

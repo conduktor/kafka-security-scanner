@@ -209,6 +209,9 @@ public final class Main implements Runnable {
                 if (enabled.contains("alerts")) {
                     collectors.add(new io.kafkascanner.collectors.AlertRuleCollector());
                 }
+                if (enabled.contains("siem")) {
+                    collectors.add(new io.kafkascanner.collectors.SiemCollector());
+                }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
                         .collect(java.util.stream.Collectors.joining(",")) + ")...");
