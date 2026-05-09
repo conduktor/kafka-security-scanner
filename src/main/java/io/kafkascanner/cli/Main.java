@@ -129,6 +129,10 @@ public final class Main implements Runnable {
             description = "host:port of ZooKeeper admin (4lw) endpoint for the zk collector")
     private String zkAdminHostPort;
 
+    @Option(names = {"--consumer-jmx-host-ports"}, defaultValue = "",
+            description = "Comma-separated host:port consumer JMX endpoints for the consumerjmx collector")
+    private String consumerJmxHostPorts;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -180,6 +184,7 @@ public final class Main implements Runnable {
                     docsDir.isBlank() ? null : docsDir,
                     prometheusUrl.isBlank() ? null : prometheusUrl,
                     zkAdminHostPort.isBlank() ? null : zkAdminHostPort,
+                    consumerJmxHostPorts.isBlank() ? null : consumerJmxHostPorts,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -219,6 +224,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("zk")) {
                     collectors.add(new io.kafkascanner.collectors.ZkAdminCollector());
+                }
+                if (enabled.contains("consumerjmx")) {
+                    collectors.add(new io.kafkascanner.collectors.ConsumerJmxCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)

@@ -18,6 +18,7 @@ public record CollectorContext(
     @Nullable String docsDir,
     @Nullable String prometheusUrl,
     @Nullable String zkAdminHostPort,
+    @Nullable String consumerJmxHostPorts,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -55,5 +56,9 @@ public record CollectorContext(
 
     public boolean hasZkAdminHostPort() {
         return zkAdminHostPort != null && !zkAdminHostPort.isBlank();
+    }
+
+    public boolean hasConsumerJmxHostPorts() {
+        return consumerJmxHostPorts != null && !consumerJmxHostPorts.isBlank();
     }
 }

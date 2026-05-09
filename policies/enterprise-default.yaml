@@ -1184,14 +1184,14 @@ controls:
     compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["324", "223"]}
 
   - id: KAFKA-MON-005
-    title: "Consumer lag monitoring"
+    title: "Consumer lag monitoring (live consumer JMX + Prometheus rule)"
     severity: medium
     category: operational
-    description: "Monitor consumer lag and lag growth rate"
-    requires: [docs, jmx]
-    condition: "docs.monitoring_alerts.exists && 'messages_in_per_sec' in jmx && jmx.messages_in_per_sec >= 0.0"
-    message: "Consumer lag monitoring ensures data freshness SLAs"
-    remediation: "Track consumer group lag via kafka.consumer:type=ConsumerLagMetrics"
+    description: "Consumer JMX targets must be reachable AND a Prometheus rule must fire on consumer lag"
+    requires: [consumerjmx, alerts]
+    condition: "consumer_jmx.any_target_reachable && alerts.reachable && alerts.has_consumer_lag_rule"
+    message: "Consumer lag is not monitored: no consumer JMX target reachable, or no Prometheus consumer-lag rule"
+    remediation: "Expose JMX on every consumer JVM and pass --consumer-jmx-host-ports; add a Prometheus rule on kafka.consumer:type=consumer-fetch-manager-metrics records-lag-max"
     compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["778", "223"]}
 
   - id: KAFKA-MON-006
