@@ -45,21 +45,66 @@ The 118-control reference catalogue, and its mappings to CWE, NIST 800-53, PCI-D
 
 The scanner refuses to lie. Every control either evaluates to a real boolean against collected data, declares it needs operator attestation, or is explicitly covered by a managed-service contract. Silent placeholder controls are rejected at policy load: `condition: "true"` without escape hatch is a build error.
 
-Of the 116 enterprise controls today:
+Of the 120 enterprise controls today (against a single-broker plaintext cluster with `--collectors adminclient,filesystem,tls`):
 
-- **~33 evaluated automatically via AdminClient** — broker and topic configs, ACLs, listeners, KRaft state. SASL/TLS posture, replication factor, `min.insync.replicas`, wildcard ACLs, auto-topic-creation.
-- **~79 require operator attestation** — process / governance / OS-level controls (audit log destinations, key custody, DR drills, SCRAM rotation cadence, JVM flags, file perms). Pass `--attest <file.properties>` mapping `<control_id>=pass|fail|na` to record verdicts. Without it, those controls report `attestation_required` (neither pass nor fail).
+- **~46 evaluated automatically** — combination of AdminClient/filesystem/tls/process collectors actually checking something
+- **~70 require operator attestation** — governance, runbook, OS, and ecosystem controls that need a human to confirm. Pass `--attest <file.properties>` mapping `<control_id>=pass|fail|na` to record verdicts. Without it, those controls report `attestation_required` (neither pass nor fail).
 - **~3 covered by managed-service contract** — disk encryption, patching, encrypted backups on Confluent Cloud / AWS MSK / Aiven / Redpanda Cloud (auto-detected, see Flavors below).
 
-What the scanner does **not** observe today (the reason so many controls need attestation):
+The split shifts as you enable more collectors and as the catalogue gains new conditions. Adding a JMX-enabled broker and turning on `--collectors=...,jmx` flips ~5 more controls from attestation to automatic.
 
-- Filesystem on the broker host (file perms on `server.properties` / JAAS / keystores)
-- JMX broker metrics (UnderReplicatedPartitions, request queue depth, GC, OS load)
-- TLS chain validity (cert expiry, SAN, key size, cipher suites)
-- Cloud / k8s control plane (IAM, network policies, KMS, Strimzi)
-- Ecosystem APIs (Schema Registry, Connect, MirrorMaker)
+## Collectors
 
-Each is a **`Collector`** plugged in via the `io.kafkascanner.collectors.Collector` interface. Controls declare `requires: [adminclient, jmx, filesystem]`. If a required collector isn't running, the control resolves to `na` with rationale, never silently passes. The interface and runtime are in place; concrete JMX/Filesystem/TLS implementations are open work.
+Each collector populates a slice of the cluster snapshot. Controls declare `requires: [...]` and the engine returns `na` (with rationale) when a required collector isn't running. No collector → no silent pass.
+
+| Collector     | Flag                              | What it sees                                                                                  | Examples of controls it unlocks                              |
+|---------------|-----------------------------------|----------------------------------------------------------------------------------------------|---------------------------------------------------------------|
+| `adminclient` | enabled by default                | Broker configs, topic configs, ACLs, listeners, KRaft cluster state                          | SASL posture, TLS on listeners, RF/ISR, wildcard ACLs         |
+| `filesystem`  | `--kafka-config-dir /etc/kafka`   | Local config dir: parses `server.properties`, lists files with POSIX perms, JAAS presence    | KAFKA-FS-001 JAAS world-readable, keystore perms, log4j path  |
+| `jmx`         | `--jmx-host-port host:9999`       | Broker MBeans over RMI: URP, OfflinePartitions, RequestHandlerIdle, MessagesIn, GC, FD usage | KAFKA-JMX-001 broker URP, request queue saturation            |
+| `tls`         | `--collectors=...,tls`            | Real TLS handshake to bootstrap host, leaf cert chain, expiry, key size, SAN, cipher suite   | KAFKA-TLS-001 cert >30d to expiry, weak ciphers               |
+| `process`     | `--collectors=...,process` (Linux)| `/proc/<pid>/cmdline` + `limits`: JVM flags, heap, GC, ulimits, Kafka version from jar       | KAFKA-OPS-007 ulimit, run-as-non-root, JVM flag policy        |
+
+Combined example:
+
+```bash
+kafka-security-scanner \
+  --bootstrap broker.prod:9092 \
+  --collectors adminclient,filesystem,tls,jmx \
+  --kafka-config-dir /etc/kafka \
+  --jmx-host-port broker.prod:9999 \
+  --policy enterprise \
+  --attest attestations.properties \
+  --format sarif,html,csv
+```
+
+Where `attestations.properties` looks like:
+
+```properties
+KAFKA-AVAIL-003 = pass    # quarterly DR drill done 2026-04-12
+KAFKA-OPS-001   = pass    # patched within 30d of CVE-2026-1234
+KAFKA-DATA-001  = na      # this cluster carries only public data
+```
+
+### Cross-validation
+
+The same fact can be checked by multiple collectors. Example: TLS posture on the inter-broker listener is reported by AdminClient (`security.inter.broker.protocol`) AND by the TLS collector's handshake (`tls.handshake_ok` + `tls.protocol`). Controls can `&&` both sides, so config drift between what the broker thinks it's serving and what it actually serves becomes visible.
+
+### Adding a collector
+
+Implement `io.kafkascanner.collectors.Collector`:
+
+```java
+public final class CloudIamCollector implements Collector {
+    public String name() { return "cloud-iam"; }
+    public boolean isAvailable(CollectorContext c) { return c.cloudCreds() != null; }
+    public Map<String, Object> collect(CollectorContext c) {
+        return Map.of("cloud_iam", iamSnapshot(c.cloudCreds()));
+    }
+}
+```
+
+Wire it in `Main.java` behind a `--collectors=cloud-iam` flag, expose `cloud_iam` to CEL in `PolicyEngine`, and write controls with `requires: [cloud-iam]`. PRs welcome.
 
 ### Flavors
 
