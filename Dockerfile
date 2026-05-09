@@ -5,11 +5,8 @@ FROM eclipse-temurin:25_36-jdk AS build
 WORKDIR /src
 
 # Cache Gradle dependencies.
-COPY build.gradle settings.gradle* gradle.properties ./
-COPY gradle/ gradle/
+COPY build.gradle settings.gradle gradle.properties ./
 COPY config/ config/
-RUN if [ -f gradlew ]; then chmod +x gradlew; fi
-
 COPY src/ src/
 COPY policies/ policies/
 
