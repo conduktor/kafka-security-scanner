@@ -475,14 +475,14 @@ controls:
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
   - id: KAFKA-AUDIT-008
-    title: "Connect connector change audit [ecosystem]"
+    title: "Connect topics enumerated + REST auth + audit pipeline [ecosystem]"
     severity: medium
     category: security
-    description: "Audit Connect connector create/update/pause/delete operations"
-    requires: [connect, docs]
-    condition: "connect.reachable && connect.requires_auth && docs.connect_audit_policy.exists"
-    message: "Connect audit requires Connect collector"
-    remediation: "Enable Kafka Connect audit logging"
+    description: "Connect REST must require auth, every connector must declare its topic set (so audit can attribute writes to a connector), and a SIEM shipper or audit logger must be present"
+    requires: [connect]
+    condition: "connect.reachable && connect.requires_auth && (size(connect.connectors) == 0 || connect.any_connector_topic_listed)"
+    message: "Connect REST is anonymous, or at least one connector does not list its topics — audit cannot attribute writes"
+    remediation: "Enable Connect REST auth (basic.auth.user.info / oauth2); ensure every connector config sets `topics` or `topics.regex`"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
   - id: KAFKA-AUDIT-009
@@ -902,14 +902,14 @@ controls:
     compliance: {pci_dss: ["3.5", "3.6"], nist: ["SC-12", "SC-17"], cwe: ["321"]}
 
   - id: KAFKA-DATA-003
-    title: "Data masking for non-production"
+    title: "Data masking for non-production (Connect SMT + classification)"
     severity: medium
     category: security
-    description: "Implement data masking for sensitive fields in non-production environments"
-    requires: [docs]
-    condition: "docs.data_classification.exists && docs.data_masking.exists"
-    message: "PII/PCI data should be masked in dev/staging/qa environments"
-    remediation: "Apply masking/tokenization to sensitive fields before non-prod environments"
+    description: "A Connect MaskField / RegexRouter / ReplaceField transform is in use AND data classification is documented"
+    requires: [connect, docs]
+    condition: "connect.reachable && connect.any_mask_transform && docs.data_classification.exists"
+    message: "No Connect MaskField/RegexRouter/ReplaceField SMT detected and/or no docs/data-classification.md"
+    remediation: "Apply org.apache.kafka.connect.transforms.MaskField (or equivalent) on connectors that move PII; document classification levels"
     compliance: {pci_dss: ["3.4"], nist: ["AC-4", "SC-28"], cwe: ["200", "359"]}
 
   - id: KAFKA-DATA-004
@@ -944,14 +944,14 @@ controls:
     compliance: {pci_dss: ["3.2"], nist: ["AC-16", "RA-2"], cwe: ["200", "359"]}
 
   - id: KAFKA-DATA-007
-    title: "PII detection and quarantine"
+    title: "PII detection and quarantine (Connect masking SMT + DLQ)"
     severity: high
     category: security
-    description: "Detect PII in streams and route to quarantine topics"
+    description: "A Connect masking SMT must be configured AND at least one DLQ topic declared for failed/quarantined records"
     requires: [connect]
-    condition: "connect.reachable && connect.connectors.exists(c, c.contains('pii') || c.contains('quarantine') || c.contains('redact'))"
-    message: "PII detection requires proxy or stream processor to scan message payloads"
-    remediation: "Use regex/ML-based PII detection and route to quarantine topics"
+    condition: "connect.reachable && connect.any_mask_transform && connect.any_dlq_topic_configured"
+    message: "PII detection/quarantine is incomplete: missing masking SMT or no DLQ topic declared"
+    remediation: "Add a MaskField / RegexRouter SMT on PII-bearing connectors and set errors.deadletterqueue.topic.name for every connector"
     compliance: {pci_dss: ["3.4"], nist: ["SI-4", "SC-28"], cwe: ["200", "359"]}
 
   - id: KAFKA-DATA-008
@@ -977,14 +977,14 @@ controls:
     compliance: {pci_dss: ["6.5"], nist: ["SI-10", "CM-3"], cwe: ["20"]}
 
   - id: KAFKA-DATA-010
-    title: "Streaming data quality validation"
+    title: "Streaming data quality validation (DLQ + schema compatibility)"
     severity: medium
     category: operational
-    description: "Apply streaming data quality rules and alert on violations"
+    description: "Connectors must route bad records to a DLQ AND the registry must enforce a forward/backward compatibility mode"
     requires: [connect, schemaregistry]
-    condition: "connect.reachable && schemaregistry.reachable && connect.connector_count > 0 && schemaregistry.compatibility_protects_consumers"
-    message: "Data quality rules prevent bad data propagation through pipelines"
-    remediation: "Validate completeness, freshness, and ranges on streams; alert on violations"
+    condition: "connect.reachable && schemaregistry.reachable && connect.connector_count > 0 && connect.any_dlq_topic_configured && schemaregistry.compatibility_protects_consumers"
+    message: "Connect has no DLQ topic configured, or registry compatibility is NONE — bad records will silently break consumers"
+    remediation: "Set errors.tolerance=all and errors.deadletterqueue.topic.name on every connector; pin registry global compatibility to BACKWARD or FORWARD"
     compliance: {pci_dss: ["10.4"], nist: ["SI-10", "AU-6"], cwe: ["20"]}
 
   - id: KAFKA-DATA-011
@@ -1117,14 +1117,14 @@ controls:
     compliance: {pci_dss: ["6.5"], nist: ["CM-2", "CM-6"]}
 
   - id: KAFKA-OPS-010
-    title: "Dead Letter Queue configured"
+    title: "Dead Letter Queue configured on every connector"
     severity: medium
     category: operational
-    description: "Configure DLQ topics for Kafka Connect and stream processors"
-    requires: [docs]
-    condition: "docs.dlq_config.exists"
-    message: "DLQ topics capture failed messages for investigation and replay"
-    remediation: "Configure errors.tolerance=all and errors.deadletterqueue.topic.name"
+    description: "Every Connect connector must declare errors.deadletterqueue.topic.name; absent if no connectors exist"
+    requires: [connect]
+    condition: "connect.reachable && (size(connect.connectors) == 0 || connect.connector_configs.all(c, c.errors_dlq_topic != ''))"
+    message: "At least one connector has no errors.deadletterqueue.topic.name set — failed records vanish silently"
+    remediation: "Set errors.tolerance=all and errors.deadletterqueue.topic.name=<connector-dlq> on every connector"
     compliance: {pci_dss: ["10.4"], nist: ["SI-11", "AU-6"]}
 
   - id: KAFKA-OPS-011
@@ -1245,11 +1245,11 @@ controls:
     title: "MirrorMaker 2 secure replication [ecosystem]"
     severity: high
     category: security
-    description: "Secure MirrorMaker 2 with TLS/SASL and least-privilege ACLs"
+    description: "Every MM2 connector config must set source.cluster.security.protocol AND target.cluster.security.protocol to SSL or SASL"
     requires: [connect]
-    condition: "connect.reachable && connect.mm2_connector_present && connect.tls && connect.requires_auth"
-    message: "MirrorMaker 2 should use SASL_SSL and restricted ACLs on source and target"
-    remediation: "Configure security.protocol=SASL_SSL and least-privilege ACLs for MM2"
+    condition: "connect.reachable && connect.mm2_connector_present && connect.mm2_all_secure && connect.requires_auth"
+    message: "A MirrorMaker 2 connector is using PLAINTEXT for source or target replication"
+    remediation: "Pin source.cluster.security.protocol and target.cluster.security.protocol to SASL_SSL (or SSL) on every MM2 connector; restrict Connect REST with auth"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3", "SC-8"], cwe: ["287", "306", "862", "319"]}
 
   # ═══════════════ COLLECTOR-SPECIFIC (4) ═══════════════
