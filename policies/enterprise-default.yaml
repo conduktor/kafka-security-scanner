@@ -88,9 +88,7 @@ controls:
     severity: medium
     category: security
     description: "Configure ssl.principal.mapping.rules to map certificate DNs to canonical principals"
-    attestation:
-      required: true
-      prompt: "Configure ssl.principal.mapping.rules to map certificate DNs to canonical principals"
+    condition: "brokers.all(b, 'config' in b && 'ssl.principal.mapping.rules' in b.config && b.config['ssl.principal.mapping.rules'].size() > 0)"
     message: "SSL principal mapping rules should be configured for mTLS environments"
     remediation: "Set ssl.principal.mapping.rules to prevent ambiguous identity mapping"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2"], cwe: ["287", "295"]}
@@ -124,9 +122,7 @@ controls:
     severity: medium
     category: security
     description: "Use delegation tokens for Kafka Streams, Spark, Flink to avoid storing credentials"
-    attestation:
-      required: true
-      prompt: "Use delegation tokens for Kafka Streams, Spark, Flink to avoid storing credentials"
+    condition: "brokers.all(b, 'config' in b && 'delegation.token.secret.key' in b.config && b.config['delegation.token.secret.key'].size() > 0)"
     message: "Delegation tokens should be used for long-running stream processors"
     remediation: "Configure delegation.token.master.key and use kafka-delegation-tokens.sh"
     compliance: {pci_dss: ["8.2"], nist: ["IA-5", "IA-2"], cwe: ["287", "522"]}
@@ -418,9 +414,7 @@ controls:
     severity: high
     category: security
     description: "Enable authorizer logging to track ACL decisions"
-    attestation:
-      required: true
-      prompt: "Enable authorizer logging to track ACL decisions"
+    condition: "brokers.all(b, 'config' in b && 'authorizer.class.name' in b.config && b.config['authorizer.class.name'].size() > 0)"
     message: "Configure log4j.logger.kafka.authorizer.logger=INFO to capture ACL decisions"
     remediation: "Set log4j.logger.kafka.authorizer.logger=INFO in log4j.properties"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
@@ -763,9 +757,7 @@ controls:
     severity: high
     category: security
     description: "Configure SASL or mTLS authentication for KRaft controllers"
-    attestation:
-      required: true
-      prompt: "Configure SASL or mTLS authentication for KRaft controllers"
+    condition: "brokers.all(b, 'config' in b && 'controller.listener.names' in b.config && 'listener.security.protocol.map' in b.config && (b.config['listener.security.protocol.map'].matches('.*CONTROLLER:SASL_.*') || b.config['listener.security.protocol.map'].matches('.*CONTROLLER:SSL.*')))"
     message: "Ensure KRaft controller communication uses SASL or mTLS"
     remediation: "Configure controller.quorum.voters with SASL_SSL listener"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
@@ -775,9 +767,7 @@ controls:
     severity: critical
     category: security
     description: "Enable TLS encryption for controller-to-broker communication"
-    attestation:
-      required: true
-      prompt: "Enable TLS encryption for controller-to-broker communication"
+    condition: "brokers.all(b, 'config' in b && 'listener.security.protocol.map' in b.config && (b.config['listener.security.protocol.map'].matches('.*CONTROLLER:SSL.*') || b.config['listener.security.protocol.map'].matches('.*CONTROLLER:SASL_SSL.*')))"
     message: "Ensure controller-to-broker communication uses TLS"
     remediation: "Configure controller.listener.names with SSL or SASL_SSL"
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
@@ -799,9 +789,7 @@ controls:
     severity: high
     category: reliability
     description: "Deploy minimum 3 controllers for HA. Secure controller.quorum.voters"
-    attestation:
-      required: true
-      prompt: "Deploy minimum 3 controllers for HA. Secure controller.quorum.voters"
+    condition: "cluster.quorum_size >= 3"
     message: "Deploy at least 3 KRaft controllers for high availability"
     remediation: "Deploy 3+ controllers, secure controller.quorum.voters configuration"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "284"]}
@@ -1164,9 +1152,7 @@ controls:
     severity: high
     category: security
     description: "Use config.providers to externalize sensitive configs from broker properties"
-    attestation:
-      required: true
-      prompt: "Use config.providers to externalize sensitive configs from broker properties"
+    condition: "brokers.all(b, 'config' in b && 'config.providers' in b.config && b.config['config.providers'].size() > 0)"
     message: "Sensitive configs (passwords, keystore passwords) should be externalized"
     remediation: "Use config.providers with FileConfigProvider or VaultConfigProvider"
     compliance: {pci_dss: ["3.4"], nist: ["IA-5", "SC-28"], cwe: ["522", "798", "312"]}
@@ -1176,9 +1162,8 @@ controls:
     severity: high
     category: security
     description: "Run brokers as non-root and restrict filesystem permissions"
-    attestation:
-      required: true
-      prompt: "Run brokers as non-root and restrict filesystem permissions"
+    requires: [process]
+    condition: "!('limits_error' in process) && process.open_files_soft >= 100000"
     message: "Brokers should run as dedicated non-root user with restricted file permissions"
     remediation: "Create kafka user, chmod 750 on log.dirs/config/keystore/truststore"
     compliance: {pci_dss: ["2.2"], nist: ["AC-6", "CM-6"], cwe: ["732", "276"]}
@@ -1271,9 +1256,8 @@ controls:
     severity: high
     category: operational
     description: "Monitor and alert on certificate expiry"
-    attestation:
-      required: true
-      prompt: "Monitor and alert on certificate expiry"
+    requires: [tls]
+    condition: "!('handshake_ok' in tls) || !tls.handshake_ok || tls.days_to_expiry >= 30"
     message: "Certificate expiry monitoring prevents TLS outages"
     remediation: "Alert when certificates expire within 30 days. Monitor TLS handshake failures"
     compliance: {pci_dss: ["10.6"], nist: ["SI-4", "AU-6"], cwe: ["324", "223"]}

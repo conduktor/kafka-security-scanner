@@ -179,7 +179,7 @@ public final class KafkaCollectors {
             "controller_id", (long) controller.id(),
             "voters", nodes.stream().map(n -> (long) n.id()).toList(),
             "healthy", !nodes.isEmpty(),
-            "quorum_size", nodes.size(),
+            "quorum_size", (long) nodes.size(),
             "mode", mode
         );
     }
