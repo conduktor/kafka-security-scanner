@@ -34,6 +34,24 @@ final class HttpProbe {
      * rather than silently passing on an absent key.
      */
     static Map<String, Object> get(String url, Duration timeout) {
+        return send(HttpRequest.newBuilder().uri(URI.create(url)).timeout(timeout).GET().build(), url);
+    }
+
+    /**
+     * POSTs an unauthenticated body so callers can detect anonymous-write
+     * vulnerabilities (e.g. {@code requires_auth=false} on a write endpoint).
+     */
+    static Map<String, Object> post(String url, String body, String contentType, Duration timeout) {
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(timeout)
+            .header("Content-Type", contentType)
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        return send(req, url);
+    }
+
+    private static Map<String, Object> send(HttpRequest req, String url) {
         var out = new HashMap<String, Object>();
         out.put("url", url);
         out.put("scheme", url.startsWith("https://") ? "https" : "http");
@@ -42,15 +60,9 @@ final class HttpProbe {
         out.put("requires_auth", false);
         out.put("anonymous_allowed", false);
         try {
-            var req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(timeout)
-                .GET()
-                .build();
             var resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
             out.put("status", resp.statusCode());
             out.put("reachable", true);
-            // 401/403 means auth is required = good; 2xx without auth = bad.
             out.put("requires_auth", resp.statusCode() == 401 || resp.statusCode() == 403);
             out.put("anonymous_allowed", resp.statusCode() >= 200 && resp.statusCode() < 300);
             var body = resp.body();

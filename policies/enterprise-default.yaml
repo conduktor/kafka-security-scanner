@@ -847,14 +847,14 @@ controls:
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "IA-5"], cwe: ["287", "306"]}
 
   - id: KAFKA-SR-002
-    title: "Schema authorization [ecosystem]"
+    title: "Schema authorization (anonymous-write probe)"
     severity: high
     category: security
-    description: "Implement schema-level authorization"
-    requires: [schemaregistry, docs]
-    condition: "schemaregistry.reachable && schemaregistry.requires_auth && docs.schema_auth_policy.exists"
-    message: "Restrict who can register or evolve schemas"
-    remediation: "Configure schema ACL for subject-level access control"
+    description: "Anonymous POST to /subjects/{name}/versions must be rejected (401/403) on every subject; the registry must require auth on writes."
+    requires: [schemaregistry]
+    condition: "schemaregistry.reachable && !schemaregistry.write_anonymous_allowed && schemaregistry.all_subjects_require_auth"
+    message: "Anonymous write to Schema Registry is allowed for at least one subject — anyone can register or evolve schemas"
+    remediation: "Front the registry with kafka-schema-registry-security-plugin (or RBAC) and demand auth on POST /subjects/{}/versions"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
 
   - id: KAFKA-SR-003
@@ -881,14 +881,14 @@ controls:
 
   # ═══════════════ DATA PROTECTION (13) ═══════════════
   - id: KAFKA-DATA-001
-    title: "Application-level message encryption"
+    title: "Application-level message encryption (schema annotation OR topic config)"
     severity: high
     category: security
-    description: "Implement application-level message encryption for sensitive data fields"
-    requires: [docs]
-    condition: "docs.data_classification.exists && topic_meta.collected && topics.filter(t, t.classification == 'restricted' || t.classification == 'confidential').all(t, 'data.encryption' in t.config && t.config['data.encryption'] == 'app' && t.owner.size() > 0)"
-    message: "Sensitive data should be encrypted at application level before producing to Kafka"
-    remediation: "Encrypt PII/PCI fields with AES-256-GCM before producing"
+    description: "Sensitive topics must declare app-level encryption either via a schema annotation (@encrypt / x-encryption / confluent:tags PII) or via the data.encryption topic config"
+    requires: [adminclient, schemaregistry]
+    condition: "topic_meta.collected && schemaregistry.reachable && topics.filter(t, t.classification == 'restricted' || t.classification == 'confidential').all(t, ('data.encryption' in t.config && t.config['data.encryption'] == 'app') || schemaregistry.any_subject_with_encrypt_annotation)"
+    message: "A restricted/confidential topic has neither data.encryption=app on the topic nor an @encrypt schema annotation"
+    remediation: "Encrypt PII/PCI fields with AES-256-GCM before producing; tag the schema with @encrypt or set data.encryption=app on the topic"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28", "SC-13"], cwe: ["311", "312"]}
 
   - id: KAFKA-DATA-002
@@ -1008,14 +1008,14 @@ controls:
     compliance: {nist: ["AC-2", "CM-8"]}
 
   - id: KAFKA-DATA-013
-    title: "Tokenization for high-sensitivity fields"
+    title: "Tokenization for high-sensitivity fields (schema annotation OR topic config)"
     severity: high
     category: security
-    description: "Apply tokenization or FPE for high-sensitivity fields before cross-zone sharing"
-    requires: [docs]
-    condition: "docs.data_classification.exists && topic_meta.collected && topics.filter(t, t.classification == 'restricted').all(t, 'data.tokenized' in t.config && t.config['data.tokenized'] == 'true')"
-    message: "Tokenization protects high-sensitivity data across trust zones"
-    remediation: "Apply format-preserving encryption or tokenization before data leaves trust zone"
+    description: "Restricted topics must declare tokenization either via a schema annotation (@tokenize / @tokenized / x-tokenization) or via the data.tokenized topic config"
+    requires: [adminclient, schemaregistry]
+    condition: "topic_meta.collected && schemaregistry.reachable && topics.filter(t, t.classification == 'restricted').all(t, ('data.tokenized' in t.config && t.config['data.tokenized'] == 'true') || schemaregistry.any_subject_with_tokenized_annotation)"
+    message: "A restricted topic has neither data.tokenized=true nor a @tokenized schema annotation"
+    remediation: "Apply format-preserving encryption or tokenization before data leaves the trust zone; tag the schema with @tokenized or set data.tokenized=true on the topic"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28", "MP-6"], cwe: ["359", "312"]}
 
   # ═══════════════ OPERATIONS (11) ═══════════════
