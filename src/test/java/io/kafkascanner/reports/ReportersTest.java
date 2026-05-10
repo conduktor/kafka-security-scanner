@@ -93,7 +93,7 @@ class ReportersTest {
         assertThat(html.indexOf("FAIL-001")).isLessThan(html.indexOf("AZURE-001"));
         assertThat(html).contains("status-na");
         assertThat(html).contains("Not applicable for this Kafka flavor");
-        assertThat(html).contains("<span class=\"sev sev-na\">N/A</span>");
+        assertThat(html).contains("<span class=\"badge sev-na\">N/A</span>");
         assertThat(html).doesNotContain("<span class=\"sev sev-critical\">critical</span>"
             + "<b>AZURE-001</b>");
         assertThat(html).doesNotContain("<b>Remediation:</b> none");

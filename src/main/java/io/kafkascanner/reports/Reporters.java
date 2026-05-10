@@ -141,100 +141,239 @@ public final class Reporters {
         var path = outDir.resolve("report.html");
         var sb = new StringBuilder(8192);
         sb.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">");
+        sb.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.append("<title>Kafka Security Scan — ").append(escape(result.cluster().name())).append("</title>");
-        sb.append("<style>");
-        sb.append("body{font:14px -apple-system,BlinkMacSystemFont,'SF Pro Text',Helvetica,Arial,sans-serif;");
-        sb.append("color:#1d1d1f;background:#f5f5f7;margin:0;padding:32px;}");
-        sb.append(".container{max-width:1100px;margin:0 auto;background:#fff;border-radius:12px;");
-        sb.append("padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.06);}");
-        sb.append("h1{font-size:28px;margin:0 0 8px;font-weight:600;}");
-        sb.append("h2{font-size:18px;margin:24px 0 12px;font-weight:600;}");
-        sb.append(".meta{color:#6e6e73;font-size:13px;margin-bottom:24px;}");
-        sb.append(".score{display:inline-block;padding:16px 24px;border-radius:8px;font-size:32px;");
-        sb.append("font-weight:600;color:#fff;}");
-        sb.append(".grade-A{background:#34c759;}.grade-B{background:#5ac8fa;}");
-        sb.append(".grade-C{background:#ff9500;}.grade-F{background:#ff3b30;}");
-        sb.append(".stats{display:flex;gap:16px;margin:16px 0;}");
-        sb.append(".stat{flex:1;padding:12px;background:#f5f5f7;border-radius:8px;text-align:center;}");
-        sb.append(".stat .v{font-size:24px;font-weight:600;}.stat .l{font-size:12px;color:#6e6e73;}");
-        sb.append("details{border:1px solid #e5e5ea;border-radius:8px;margin:8px 0;padding:12px 16px;}");
-        sb.append("details.status-na{border-color:#d1d1d6;background:#fbfbfd;}");
-        sb.append("details.status-pass{border-color:#d8ecd8;}");
-        sb.append("details[open]{background:#fafafa;}");
-        sb.append("summary{cursor:pointer;font-weight:500;list-style:none;}");
-        sb.append("summary::-webkit-details-marker{display:none;}");
-        sb.append("summary::before{content:'▶';margin-right:8px;font-size:10px;color:#86868b;}");
-        sb.append("details[open] summary::before{content:'▼';}");
-        sb.append(".sev{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;");
-        sb.append("font-weight:600;text-transform:uppercase;margin-right:8px;}");
-        sb.append(".sev-critical{background:#ff3b30;color:#fff;}");
-        sb.append(".sev-high{background:#ff9500;color:#fff;}");
-        sb.append(".sev-medium{background:#ffcc00;color:#1d1d1f;}");
-        sb.append(".sev-low{background:#5ac8fa;color:#fff;}");
-        sb.append(".sev-info{background:#8e8e93;color:#fff;}");
-        sb.append(".sev-na{background:#8e8e93;color:#fff;}");
-        sb.append(".sev-pass{background:#34c759;color:#fff;}");
-        sb.append(".status-na .sev{background:#8e8e93;color:#fff;}");
-        sb.append(".status-pass .sev{background:#34c759;color:#fff;}");
-        sb.append(".rem{margin-top:8px;padding:8px 12px;background:#e8f4fd;border-left:3px solid #007aff;");
-        sb.append("border-radius:4px;font-size:13px;}");
-        sb.append("pre{white-space:pre-wrap;background:#f5f5f7;border-radius:6px;padding:10px;");
-        sb.append("font-size:12px;line-height:1.4;overflow:auto;}");
-        sb.append("</style></head><body><div class=\"container\">");
-        sb.append("<h1>Kafka Security Scan Report</h1>");
-        sb.append("<div class=\"meta\">Cluster: <b>").append(escape(result.cluster().name()))
-            .append("</b> · Flavor: ").append(escape(result.cluster().kafkaFlavor()))
-            .append(" · Scanned: ").append(escape(result.scannedAt()))
-            .append(" · Brokers: ").append(result.cluster().brokers())
-            .append(" · Topics: ").append(result.cluster().topics()).append("</div>");
-        sb.append("<div class=\"meta\">Collectors: ");
-        sb.append(escape(String.join(", ", result.collectorsUsed())));
-        if (!result.collectorsUnavailable().isEmpty()) {
-            sb.append(" · <i>Unavailable:</i> ");
-            sb.append(escape(String.join(", ", result.collectorsUnavailable())));
-        }
-        sb.append("</div>");
-        sb.append("<div class=\"score grade-").append(grade(result.score())).append("\">")
-            .append(result.score()).append("/100</div>");
-        sb.append("<div class=\"stats\">");
-        sb.append("<div class=\"stat\"><div class=\"v\">").append(result.passCount())
-            .append("</div><div class=\"l\">PASS</div></div>");
-        sb.append("<div class=\"stat\"><div class=\"v\">").append(result.failCount())
-            .append("</div><div class=\"l\">FAIL</div></div>");
-        sb.append("<div class=\"stat\"><div class=\"v\">").append(result.naCount())
-            .append("</div><div class=\"l\">N/A</div></div>");
-        sb.append("<div class=\"stat\"><div class=\"v\">")
-            .append(String.format(Locale.ROOT, "%.0f%%", result.passRate()))
-            .append("</div><div class=\"l\">Pass Rate</div></div>");
-        sb.append("</div>");
+        appendHtmlStyles(sb);
         var reportRows = resultsForAudit(result);
-        sb.append("<h2>Control Results (").append(reportRows.size()).append(")</h2>");
         var sorted = new ArrayList<>(reportRows);
         sorted.sort(Reporters::compareForAudit);
-        for (var f : sorted) {
-            sb.append("<details class=\"status-")
-                .append(escape(f.status().name()))
-                .append("\"><summary>")
-                .append("<span class=\"sev ").append(escape(badgeClass(f))).append("\">")
-                .append(escape(badgeText(f))).append("</span>")
-                .append("<b>").append(escape(f.controlId())).append("</b> ")
-                .append("[").append(escape(f.status().name())).append("] — ")
-                .append(escape(f.title())).append("</summary>");
-            sb.append("<p>").append(escape(f.message())).append("</p>");
-            if (shouldShowRemediation(f) && f.remediation() != null && !f.remediation().isEmpty()) {
-                sb.append("<div class=\"rem\"><b>Remediation:</b> ")
-                    .append(escape(f.remediation())).append("</div>");
-            }
-            if (f.evidence() != null && !f.evidence().isEmpty()) {
-                sb.append("<pre>")
-                    .append(escape(JSON.writeValueAsString(f.evidence())))
-                    .append("</pre>");
-            }
-            sb.append("</details>");
+        var inScope = sorted.stream().filter(f -> !isOutOfScope(f)).count();
+        var outOfScope = sorted.size() - inScope;
+        sb.append("</head><body>");
+        sb.append("<aside class=\"sidebar\">");
+        sb.append("<div class=\"brand\">Kafka Security Scanner</div>");
+        sb.append("<div class=\"side-title\">Scope</div>");
+        appendFilterButton(sb, "scope", "in", "In Scope", inScope, true);
+        appendFilterButton(sb, "scope", "out", "Out of Scope", outOfScope, false);
+        sb.append("<div class=\"side-title\">Readiness</div>");
+        appendFilterButton(sb, "status", "all", "All Statuses", inScope, true);
+        appendFilterButton(sb, "status", "not-ready", "Not Ready", countByStatus(sorted, "not-ready"), false);
+        appendFilterButton(sb, "status", "needs-evidence", "Needs Evidence",
+            countByStatus(sorted, "needs-evidence"), false);
+        appendFilterButton(sb, "status", "ready", "Ready", countByStatus(sorted, "ready"), false);
+        sb.append("<div class=\"side-title\">Themes</div>");
+        appendFilterButton(sb, "theme", "all", "All Themes", sorted.size(), true);
+        for (var entry : themeCounts(sorted).entrySet()) {
+            appendFilterButton(sb, "theme", slug(entry.getKey()), entry.getKey(), entry.getValue(), false);
         }
-        sb.append("</div></body></html>");
+        sb.append("</aside>");
+
+        sb.append("<main class=\"main\"><header class=\"topbar\">");
+        sb.append("<button class=\"tab active\" data-tab=\"in\">In Scope <b>")
+            .append(inScope).append("</b></button>");
+        sb.append("<button class=\"tab\" data-tab=\"out\">Out of Scope <b>")
+            .append(outOfScope).append("</b></button>");
+        sb.append("<label class=\"search\"><span>Search</span><input id=\"control-search\" ")
+            .append("placeholder=\"Search controls by name, code, evidence, or requirements\"></label>");
+        sb.append("</header>");
+
+        sb.append("<section class=\"summary\">");
+        sb.append("<div><h1>Kafka Security Scan Report</h1><p>")
+            .append("Cluster <b>").append(escape(result.cluster().name())).append("</b>")
+            .append(" · Flavor ").append(escape(result.cluster().kafkaFlavor()))
+            .append(" · Brokers ").append(result.cluster().brokers())
+            .append(" · Topics ").append(result.cluster().topics())
+            .append(" · Scanned ").append(escape(result.scannedAt()))
+            .append("</p></div>");
+        sb.append("<div class=\"score grade-").append(grade(result.score())).append("\">")
+            .append(result.score()).append("<span>/100</span></div>");
+        sb.append("</section>");
+        sb.append("<section class=\"metrics\">");
+        appendMetric(sb, "Pass", result.passCount(), "ready");
+        appendMetric(sb, "Fail", result.failCount(), "not-ready");
+        appendMetric(sb, "N/A", result.naCount(), "needs-evidence");
+        appendMetric(sb, "Pass Rate", String.format(Locale.ROOT, "%.0f%%", result.passRate()), "neutral");
+        sb.append("</section>");
+        sb.append("<section class=\"collector-line\"><b>Collectors:</b> ")
+            .append(escape(String.join(", ", result.collectorsUsed())));
+        if (!result.collectorsUnavailable().isEmpty()) {
+            sb.append(" <span><b>Missing evidence:</b> ")
+                .append(escape(String.join(", ", result.collectorsUnavailable())))
+                .append("</span>");
+        }
+        sb.append("</section>");
+
+        sb.append("<section class=\"toolbar\"><button class=\"checkbox\" disabled></button>")
+            .append("<span id=\"visible-count\"></span>")
+            .append("<span class=\"muted\">Controls are grouped by audit scope and theme.</span>")
+            .append("</section>");
+        sb.append("<section class=\"control-list\">");
+        for (var f : sorted) {
+            appendControlRow(sb, f);
+        }
+        sb.append("</section></main>");
+        appendHtmlScript(sb);
+        sb.append("</body></html>");
         Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
         return path;
+    }
+
+    private static void appendHtmlStyles(StringBuilder sb) {
+        sb.append("<style>");
+        sb.append("*{box-sizing:border-box;}body{font:14px -apple-system,BlinkMacSystemFont,");
+        sb.append("'SF Pro Text',Helvetica,Arial,sans-serif;color:#24262d;background:#f7f8fa;");
+        sb.append("margin:0;display:grid;grid-template-columns:280px 1fr;min-height:100vh;}");
+        sb.append(".sidebar{position:sticky;top:0;height:100vh;background:#fff;border-right:1px solid #dfe3e8;");
+        sb.append("overflow:auto;padding:20px 16px;}.brand{font-size:18px;font-weight:700;margin:0 0 24px;}");
+        sb.append(".side-title{font-size:12px;text-transform:uppercase;color:#6b7280;font-weight:700;");
+        sb.append("letter-spacing:.03em;margin:20px 8px 8px;}.filter{width:100%;height:38px;border:0;");
+        sb.append("background:transparent;border-radius:6px;display:flex;align-items:center;justify-content:space-between;");
+        sb.append("padding:0 10px;color:#3f4350;font:inherit;cursor:pointer;text-align:left;}");
+        sb.append(".filter:hover,.filter.active{background:#eef4ff;color:#245ca8;}.filter b{font-size:12px;color:#6b7280;}");
+        sb.append(".main{min-width:0;background:#fff;}.topbar{height:64px;border-bottom:1px solid #dfe3e8;");
+        sb.append("display:flex;align-items:stretch;background:#fff;position:sticky;top:0;z-index:2;}");
+        sb.append(".tab{border:0;border-right:1px solid #dfe3e8;background:#fff;padding:0 22px;");
+        sb.append("font:inherit;color:#606673;cursor:pointer;}.tab.active{color:#245ca8;box-shadow:inset 0 -2px #245ca8;}");
+        sb.append(".tab b{margin-left:6px;}.search{flex:1;display:flex;align-items:center;gap:12px;padding:0 22px;");
+        sb.append("color:#6b7280;}.search input{width:100%;border:0;outline:0;font:inherit;color:#24262d;}");
+        sb.append(".summary{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;");
+        sb.append("padding:28px 32px 18px;border-bottom:1px solid #edf0f3;}.summary h1{font-size:28px;");
+        sb.append("line-height:1.2;margin:0 0 8px;}.summary p{margin:0;color:#626875;}");
+        sb.append(".score{min-width:116px;text-align:center;padding:14px 18px;border-radius:8px;font-size:30px;");
+        sb.append("font-weight:800;color:#fff;}.score span{font-size:16px;font-weight:700;}");
+        sb.append(".grade-A{background:#1f9d47;}.grade-B{background:#2386c8;}.grade-C{background:#d98219;}");
+        sb.append(".grade-F{background:#d83333;}.metrics{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));");
+        sb.append("gap:12px;padding:18px 32px;}.metric{border:1px solid #e6e9ee;border-radius:6px;padding:14px 16px;}");
+        sb.append(".metric b{font-size:22px;display:block;}.metric span{font-size:12px;color:#626875;text-transform:uppercase;}");
+        sb.append(".collector-line{padding:0 32px 18px;color:#626875;}.collector-line span{display:block;margin-top:6px;}");
+        sb.append(".toolbar{height:52px;border-top:1px solid #edf0f3;border-bottom:1px solid #dfe3e8;");
+        sb.append("display:flex;align-items:center;gap:14px;padding:0 32px;color:#626875;}.checkbox{width:20px;height:20px;");
+        sb.append("border:2px solid #9aa0aa;border-radius:3px;background:#fff;}.control-list{background:#fff;}");
+        sb.append(".control-row{border:0;border-bottom:1px solid #dfe3e8;background:#fff;}");
+        sb.append(".control-row[open]{background:#fbfcfd;}.control-row[hidden]{display:none;}");
+        sb.append(".control-row summary{list-style:none;display:grid;grid-template-columns:28px 34px 1fr auto;");
+        sb.append("gap:16px;align-items:center;min-height:96px;padding:16px 32px;cursor:pointer;}");
+        sb.append(".control-row summary::-webkit-details-marker{display:none;}.status-dot{width:34px;height:34px;border-radius:50%;");
+        sb.append("display:grid;place-items:center;font-weight:800;}.dot-ready{background:#e9f9e8;color:#199b23;}");
+        sb.append(".dot-not-ready{background:#ffecec;color:#cf2029;}.dot-needs-evidence{background:#f1f3f6;color:#6b7280;}");
+        sb.append(".dot-out-scope{background:#f1f3f6;color:#6b7280;}.code{color:#245ca8;font-weight:700;margin-right:8px;}");
+        sb.append(".row-title{font-weight:700;font-size:16px;}.row-main p{margin:6px 0 10px;color:#424752;}");
+        sb.append(".chips{display:flex;flex-wrap:wrap;gap:6px;}.chip{border-radius:5px;background:#eef2f7;color:#445063;");
+        sb.append("padding:4px 8px;font-size:12px;font-weight:600;}.chip.theme{background:#eef4ff;color:#245ca8;}");
+        sb.append(".chip.scope{background:#f1f3f6;color:#626875;}.badge{border-radius:5px;color:#fff;font-weight:800;");
+        sb.append("font-size:12px;text-transform:uppercase;padding:5px 9px;white-space:nowrap;}");
+        sb.append(".sev-critical{background:#d83333;}.sev-high{background:#d98219;}.sev-medium{background:#e9b949;color:#1f2937;}");
+        sb.append(".sev-low{background:#2386c8;}.sev-info,.sev-na{background:#858b96;}.sev-pass{background:#1f9d47;}");
+        sb.append(".detail{padding:0 32px 20px 110px;}.rem{margin:0 0 12px;padding:10px 12px;");
+        sb.append("background:#e8f4fd;border-left:3px solid #007aff;border-radius:4px;}.detail pre{white-space:pre-wrap;");
+        sb.append("background:#f3f5f7;border-radius:6px;padding:12px;font-size:12px;line-height:1.4;overflow:auto;}");
+        sb.append(".muted{color:#8a9099;}@media(max-width:900px){body{display:block}.sidebar{position:relative;");
+        sb.append("height:auto;border-right:0;border-bottom:1px solid #dfe3e8}.topbar{top:0}.metrics{grid-template-columns:repeat(2,1fr)}");
+        sb.append(".control-row summary{grid-template-columns:24px 28px 1fr;}.badge{grid-column:3}.detail{padding-left:32px}}");
+        sb.append("</style>");
+    }
+
+    private static void appendMetric(StringBuilder sb, String label, Object value, String cssClass) {
+        sb.append("<div class=\"metric ").append(escape(cssClass)).append("\"><b>")
+            .append(escape(String.valueOf(value))).append("</b><span>")
+            .append(escape(label)).append("</span></div>");
+    }
+
+    private static void appendFilterButton(
+        StringBuilder sb,
+        String filter,
+        String value,
+        String label,
+        long count,
+        boolean active
+    ) {
+        sb.append("<button class=\"filter");
+        if (active) {
+            sb.append(" active");
+        }
+        sb.append("\" data-filter=\"").append(escape(filter)).append("\" data-value=\"")
+            .append(escape(value)).append("\"><span>").append(escape(label))
+            .append("</span><b>").append(count).append("</b></button>");
+    }
+
+    private static void appendControlRow(StringBuilder sb, Finding finding) throws IOException {
+        var outOfScope = isOutOfScope(finding);
+        var scope = outOfScope ? "out" : "in";
+        var readiness = readiness(finding);
+        var theme = themeFor(finding);
+        sb.append("<details class=\"control-row status-").append(escape(finding.status().name()))
+            .append("\" data-scope=\"").append(scope)
+            .append("\" data-status=\"").append(escape(readiness))
+            .append("\" data-theme=\"").append(escape(slug(theme)))
+            .append("\" data-search=\"").append(escape(searchText(finding, theme))).append("\">");
+        sb.append("<summary><span class=\"checkbox\"></span><span class=\"status-dot dot-")
+            .append(escape(readiness)).append("\">").append(escape(statusIcon(readiness)))
+            .append("</span><div class=\"row-main\"><div><span class=\"code\">")
+            .append(escape(finding.controlId())).append("</span><span class=\"row-title\">")
+            .append(escape(finding.title())).append("</span></div><p>")
+            .append(escape(finding.message())).append("</p><div class=\"chips\">");
+        sb.append("<span class=\"chip theme\">").append(escape(theme)).append("</span>");
+        sb.append("<span class=\"chip scope\">").append(outOfScope ? "Out of Scope" : "In Scope")
+            .append("</span>");
+        appendComplianceChips(sb, finding);
+        sb.append("</div></div><span class=\"badge ").append(escape(badgeClass(finding)))
+            .append("\">").append(escape(badgeText(finding))).append("</span></summary>");
+        sb.append("<div class=\"detail\">");
+        if (shouldShowRemediation(finding)
+            && finding.remediation() != null
+            && !finding.remediation().isEmpty()) {
+            sb.append("<div class=\"rem\"><b>Remediation:</b> ")
+                .append(escape(finding.remediation())).append("</div>");
+        }
+        if (finding.evidence() != null && !finding.evidence().isEmpty()) {
+            sb.append("<pre>").append(escape(JSON.writeValueAsString(finding.evidence())))
+                .append("</pre>");
+        }
+        sb.append("</div></details>");
+    }
+
+    private static void appendComplianceChips(StringBuilder sb, Finding finding) {
+        var compliance = finding.compliance();
+        if (compliance == null) {
+            return;
+        }
+        if (!compliance.pciDss().isEmpty()) {
+            sb.append("<span class=\"chip\">PCI DSS</span>");
+        }
+        if (!compliance.soc2().isEmpty()) {
+            sb.append("<span class=\"chip\">SOC 2</span>");
+        }
+        if (!compliance.iso27001().isEmpty()) {
+            sb.append("<span class=\"chip\">ISO 27001</span>");
+        }
+        if (!compliance.nist().isEmpty()) {
+            sb.append("<span class=\"chip\">NIST</span>");
+        }
+        if (!compliance.cwe().isEmpty()) {
+            sb.append("<span class=\"chip\">CWE</span>");
+        }
+    }
+
+    private static void appendHtmlScript(StringBuilder sb) {
+        sb.append("<script>");
+        sb.append("(()=>{let scope='in',theme='all',status='all';");
+        sb.append("const rows=[...document.querySelectorAll('.control-row')];");
+        sb.append("const search=document.getElementById('control-search');");
+        sb.append("function mark(sel,attr,val){document.querySelectorAll(sel).forEach(b=>");
+        sb.append("b.classList.toggle('active',b.dataset[attr]===val));}");
+        sb.append("function update(){const q=(search.value||'').toLowerCase();let visible=0;");
+        sb.append("rows.forEach(r=>{const ok=r.dataset.scope===scope&&(theme==='all'||r.dataset.theme===theme)");
+        sb.append("&&(status==='all'||r.dataset.status===status)&&(!q||r.dataset.search.includes(q));");
+        sb.append("r.hidden=!ok;if(ok)visible++;});");
+        sb.append("document.getElementById('visible-count').textContent=visible+' controls shown';");
+        sb.append("mark('.tab','tab',scope);mark('[data-filter=\"scope\"]','value',scope);");
+        sb.append("mark('[data-filter=\"theme\"]','value',theme);mark('[data-filter=\"status\"]','value',status);}");
+        sb.append("document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{scope=b.dataset.tab;update();}));");
+        sb.append("document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{");
+        sb.append("const f=b.dataset.filter;if(f==='scope')scope=b.dataset.value;");
+        sb.append("if(f==='theme')theme=b.dataset.value;if(f==='status')status=b.dataset.value;update();}));");
+        sb.append("search.addEventListener('input',update);update();})();");
+        sb.append("</script>");
     }
 
     private static Path writeCsv(ScanResult result, Path outDir) throws IOException {
@@ -496,8 +635,11 @@ public final class Reporters {
     }
 
     private static String badgeText(Finding finding) {
+        if (isOutOfScope(finding)) {
+            return "N/A";
+        }
         return switch (finding.status()) {
-            case fail -> finding.severity().name();
+            case fail -> finding.severity().name().toUpperCase(Locale.ROOT);
             case error -> "ERROR";
             case na -> "N/A";
             case pass -> "PASS";
@@ -506,6 +648,9 @@ public final class Reporters {
     }
 
     private static String badgeClass(Finding finding) {
+        if (isOutOfScope(finding)) {
+            return "sev-na";
+        }
         return switch (finding.status()) {
             case fail -> "sev-" + finding.severity().name();
             case error -> "sev-critical";
@@ -516,6 +661,124 @@ public final class Reporters {
 
     private static boolean shouldShowRemediation(Finding finding) {
         return finding.status() == Status.fail || finding.status() == Status.error;
+    }
+
+    private static boolean isOutOfScope(Finding finding) {
+        return finding.evidence() != null
+            && Boolean.TRUE.equals(finding.evidence().get("not_applicable"));
+    }
+
+    private static String readiness(Finding finding) {
+        if (isOutOfScope(finding)) {
+            return "out-scope";
+        }
+        return switch (finding.status()) {
+            case pass, covered_by_flavor -> "ready";
+            case fail, error -> "not-ready";
+            case na -> "needs-evidence";
+        };
+    }
+
+    private static String statusIcon(String readiness) {
+        return switch (readiness) {
+            case "ready" -> "OK";
+            case "not-ready" -> "!";
+            case "needs-evidence" -> "?";
+            case "out-scope" -> "-";
+            default -> "";
+        };
+    }
+
+    private static long countByStatus(List<Finding> findings, String readiness) {
+        return findings.stream()
+            .filter(f -> !isOutOfScope(f))
+            .filter(f -> readiness.equals(readiness(f)))
+            .count();
+    }
+
+    private static Map<String, Long> themeCounts(List<Finding> findings) {
+        var counts = new LinkedHashMap<String, Long>();
+        for (var theme : List.of(
+            "Authentication",
+            "Authorization",
+            "Data Protection",
+            "Network & Platform",
+            "Auditability",
+            "Monitoring",
+            "Operations",
+            "Ecosystem Services",
+            "Governance Evidence")) {
+            counts.put(theme, 0L);
+        }
+        for (var finding : findings) {
+            var theme = themeFor(finding);
+            counts.put(theme, counts.getOrDefault(theme, 0L) + 1L);
+        }
+        counts.entrySet().removeIf(e -> e.getValue() == 0L);
+        return counts;
+    }
+
+    private static String themeFor(Finding finding) {
+        var id = finding.controlId() == null ? "" : finding.controlId().toUpperCase(Locale.ROOT);
+        if (id.contains("-AUTH-")) {
+            return "Authentication";
+        }
+        if (id.contains("-ACL-") || id.contains("-RBAC-") || id.contains("-OAUTH-")
+            || id.contains("-IAM-") || id.contains("-DELEGATION-")) {
+            return "Authorization";
+        }
+        if (id.contains("-ENC-") || id.contains("-TLS-") || id.contains("-KMS-")
+            || id.contains("-DATA-") || id.contains("-SR-")) {
+            return "Data Protection";
+        }
+        if (id.contains("-NET-") || id.contains("-KRAFT-") || id.contains("-ZK-")
+            || id.contains("-K8S-") || id.contains("-GCP-") || id.contains("-AWS-")
+            || id.contains("-AZURE-") || id.contains("-AIVEN-") || id.contains("-RP-")
+            || id.contains("-CC-")) {
+            return "Network & Platform";
+        }
+        if (id.contains("-AUDIT-")) {
+            return "Auditability";
+        }
+        if (id.contains("-MON-") || id.contains("-SIEM-") || id.contains("-ALERT-")) {
+            return "Monitoring";
+        }
+        if (id.contains("-CONNECT-") || id.contains("-REST-") || id.contains("-STREAMS-")) {
+            return "Ecosystem Services";
+        }
+        if (id.contains("-OPS-") || id.contains("-JMX-") || id.contains("-PROCESS-")
+            || id.contains("-FS-") || id.contains("-CIS-")) {
+            return "Operations";
+        }
+        return "Governance Evidence";
+    }
+
+    private static String slug(String value) {
+        return value.toLowerCase(Locale.ROOT)
+            .replace("&", "and")
+            .replaceAll("[^a-z0-9]+", "-")
+            .replaceAll("(^-|-$)", "");
+    }
+
+    private static String searchText(Finding finding, String theme) {
+        var sb = new StringBuilder();
+        sb.append(nullToEmpty(finding.controlId())).append(' ')
+            .append(nullToEmpty(finding.title())).append(' ')
+            .append(nullToEmpty(finding.message())).append(' ')
+            .append(nullToEmpty(finding.remediation())).append(' ')
+            .append(theme).append(' ')
+            .append(finding.status().name());
+        var evidence = finding.evidence();
+        if (evidence != null) {
+            sb.append(' ').append(String.valueOf(evidence.getOrDefault("condition", "")))
+                .append(' ').append(String.valueOf(evidence.getOrDefault("requires", "")))
+                .append(' ').append(String.valueOf(evidence.getOrDefault("missing_collectors", "")));
+        }
+        return sb.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static List<Finding> resultsForAudit(ScanResult result) {
