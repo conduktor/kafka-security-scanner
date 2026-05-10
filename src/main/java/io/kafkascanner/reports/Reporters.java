@@ -174,9 +174,17 @@ public final class Reporters {
         sb.append("</style></head><body><div class=\"container\">");
         sb.append("<h1>Kafka Security Scan Report</h1>");
         sb.append("<div class=\"meta\">Cluster: <b>").append(escape(result.cluster().name()))
-            .append("</b> · Scanned: ").append(escape(result.scannedAt()))
+            .append("</b> · Flavor: ").append(escape(result.cluster().kafkaFlavor()))
+            .append(" · Scanned: ").append(escape(result.scannedAt()))
             .append(" · Brokers: ").append(result.cluster().brokers())
             .append(" · Topics: ").append(result.cluster().topics()).append("</div>");
+        sb.append("<div class=\"meta\">Collectors: ");
+        sb.append(escape(String.join(", ", result.collectorsUsed())));
+        if (!result.collectorsUnavailable().isEmpty()) {
+            sb.append(" · <i>Unavailable:</i> ");
+            sb.append(escape(String.join(", ", result.collectorsUnavailable())));
+        }
+        sb.append("</div>");
         sb.append("<div class=\"score grade-").append(grade(result.score())).append("\">")
             .append(result.score()).append("/100</div>");
         sb.append("<div class=\"stats\">");
@@ -247,9 +255,9 @@ public final class Reporters {
                 cs.showText("Kafka Security Scan Report");
                 cs.setFont(regular, 12);
                 cs.newLineAtOffset(0, -40);
-                cs.showText("Cluster: " + result.cluster().name());
+                cs.showText(safe("Cluster: " + result.cluster().name(), 90));
                 cs.newLineAtOffset(0, -16);
-                cs.showText("Scanned: " + result.scannedAt());
+                cs.showText(safe("Scanned: " + result.scannedAt(), 90));
                 cs.newLineAtOffset(0, -16);
                 cs.showText("Brokers: " + result.cluster().brokers()
                     + "  ·  Topics: " + result.cluster().topics());
@@ -331,7 +339,33 @@ public final class Reporters {
         if (s == null) {
             return "";
         }
-        var sanitized = s.replaceAll("[\\p{Cntrl}]", " ");
+        // PDFBox Helvetica only ships WinAnsi (Latin-1 + a few specials). Drop
+        // characters outside that range — covers Unicode em-dashes / U+2264
+        // ('lessequal') / smart quotes that sneak into control titles.
+        var sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\n' || c == '\r' || c == '\t') {
+                sb.append(' ');
+            } else if (c < 0x20 || c == 0x7f) {
+                sb.append(' ');
+            } else if (c >= 0x100) {
+                // approximate the most common offenders so the message is still readable
+                sb.append(switch (c) {
+                    case '≤' -> "<=";
+                    case '≥' -> ">=";
+                    case '—', '–' -> "-";
+                    case '“', '”', '«', '»' -> "\"";
+                    case '‘', '’' -> "'";
+                    case '·', '•' -> ".";
+                    case '→', '←' -> "->";
+                    default -> "?";
+                });
+            } else {
+                sb.append(c);
+            }
+        }
+        var sanitized = sb.toString();
         return sanitized.length() <= max ? sanitized : sanitized.substring(0, max) + "...";
     }
 
