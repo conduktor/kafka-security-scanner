@@ -25,7 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Loads policy YAML and evaluates CEL conditions against the collected snapshot.
@@ -49,11 +48,9 @@ public final class PolicyEngine {
     private static final Map<String, Integer> WEIGHTS = Map.of(
         "critical", 15, "high", 10, "medium", 5, "low", 2, "info", 0
     );
-
-    private static final Pattern ADMIN_CLIENT_VAR = Pattern.compile(
-        "(^|[^A-Za-z0-9_\\.])"
-            + "(brokers|topics|acls|acl_meta|topic_meta|quotas|quota_meta|cluster)"
-            + "(\\b|\\s*\\.|\\s*\\[)"
+    private static final Set<String> ADMIN_CLIENT_VARS = Set.of(
+        "brokers", "topics", "acls", "acl_meta", "topic_meta",
+        "quotas", "quota_meta", "cluster"
     );
 
     private final Policy policy;
@@ -150,14 +147,6 @@ public final class PolicyEngine {
         Set<String> availableCollectors
     ) {
         var activation = new HashMap<String, Object>();
-        activation.put("brokers", collectedData.getOrDefault("broker", List.of()));
-        activation.put("topics", collectedData.getOrDefault("topic", List.of()));
-        activation.put("acls", collectedData.getOrDefault("acl", List.of()));
-        activation.put("acl_meta", collectedData.getOrDefault("acl_metadata", Map.of()));
-        activation.put("topic_meta", collectedData.getOrDefault("topic_metadata", Map.of()));
-        activation.put("quotas", collectedData.getOrDefault("quota", List.of()));
-        activation.put("quota_meta", collectedData.getOrDefault("quota_metadata", Map.of()));
-        activation.put("cluster", collectedData.getOrDefault("kraft", Map.of()));
         activation.put("jmx", collectedData.getOrDefault("jmx", Map.of()));
         activation.put("fs", collectedData.getOrDefault("fs", Map.of()));
         activation.put("tls", collectedData.getOrDefault("tls", Map.of()));
@@ -180,6 +169,16 @@ public final class PolicyEngine {
         activation.put("k8s", collectedData.getOrDefault("k8s", Map.of()));
         activation.put("gcp", collectedData.getOrDefault("gcp", Map.of()));
         activation.put("streams", collectedData.getOrDefault("streams", Map.of()));
+        if (availableCollectors.contains("adminclient")) {
+            activation.put("brokers", collectedData.getOrDefault("broker", List.of()));
+            activation.put("topics", collectedData.getOrDefault("topic", List.of()));
+            activation.put("acls", collectedData.getOrDefault("acl", List.of()));
+            activation.put("acl_meta", collectedData.getOrDefault("acl_metadata", Map.of()));
+            activation.put("topic_meta", collectedData.getOrDefault("topic_metadata", Map.of()));
+            activation.put("quotas", collectedData.getOrDefault("quota", List.of()));
+            activation.put("quota_meta", collectedData.getOrDefault("quota_metadata", Map.of()));
+            activation.put("cluster", collectedData.getOrDefault("kraft", Map.of()));
+        }
 
         List<Finding> findings = new ArrayList<>();
         int passCount = 0;
@@ -188,9 +187,11 @@ public final class PolicyEngine {
         int kafkaFlavorCoveredCount = 0;
         int errorCount = 0;
         int score = 100;
+        var collectorsUnavailable = new java.util.LinkedHashSet<String>();
 
         for (var control : policy.controls()) {
-            var status = resolve(control, activation, kafkaFlavor, availableCollectors);
+            var status = resolve(control, activation, kafkaFlavor, availableCollectors,
+                collectorsUnavailable);
 
             switch (status) {
                 case pass -> passCount++;
@@ -236,40 +237,12 @@ public final class PolicyEngine {
             clusterMode = mode;
         }
 
-        var collectorsUnavailable = new ArrayList<String>();
-        for (var c : policy.controls()) {
-            if (c.requires() != null) {
-                for (var req : c.requires()) {
-                    if (!availableCollectors.contains(req) && !collectorsUnavailable.contains(req)) {
-                        collectorsUnavailable.add(req);
-                    }
-                }
-            }
-            if (c.requiresPerMode() != null) {
-                for (var modeReq : c.requiresPerMode().values()) {
-                    if (modeReq == null) {
-                        continue;
-                    }
-                    for (var req : modeReq) {
-                        if (!availableCollectors.contains(req) && !collectorsUnavailable.contains(req)) {
-                            collectorsUnavailable.add(req);
-                        }
-                    }
-                }
-            }
-            if (!availableCollectors.contains("adminclient")
-                && usesAdminClientData(c.condition())
-                && !collectorsUnavailable.contains("adminclient")) {
-                collectorsUnavailable.add("adminclient");
-            }
-        }
-
         return new ScanResult(
             clusterName, "prod", Instant.now().toString(),
             score, passCount, failCount, naCount,
             kafkaFlavorCoveredCount, errorCount,
             passRate,
-            new ArrayList<>(availableCollectors), collectorsUnavailable,
+            new ArrayList<>(availableCollectors), new ArrayList<>(collectorsUnavailable),
             findings,
             new ClusterInfo(clusterName, brokerCount, topicCount, 0, clusterMode,
                 kafkaFlavor, kafkaFlavorSource)
@@ -280,7 +253,8 @@ public final class PolicyEngine {
         Control control,
         Map<String, Object> activation,
         String kafkaFlavor,
-        Set<String> availableCollectors
+        Set<String> availableCollectors,
+        Set<String> collectorsUnavailable
     ) {
         var coveredBy = control.coveredByKafkaFlavor();
         if (coveredBy != null && coveredBy.contains(kafkaFlavor)) {
@@ -291,6 +265,7 @@ public final class PolicyEngine {
         if (requires != null && !requires.isEmpty()) {
             for (var req : requires) {
                 if (!availableCollectors.contains(req)) {
+                    collectorsUnavailable.add(req);
                     return Status.na;
                 }
             }
@@ -313,6 +288,7 @@ public final class PolicyEngine {
             if (modeRequires != null) {
                 for (var req : modeRequires) {
                     if (!availableCollectors.contains(req)) {
+                        collectorsUnavailable.add(req);
                         return Status.na;
                     }
                 }
@@ -323,12 +299,21 @@ public final class PolicyEngine {
         if (condition == null || condition.isBlank()) {
             return Status.error;
         }
-        if (!availableCollectors.contains("adminclient") && usesAdminClientData(condition)) {
+        dev.cel.common.CelAbstractSyntaxTree ast;
+        try {
+            ast = compiler.compile(condition).getAst();
+        } catch (Exception e) {
+            System.err.printf("CEL compile failed %s: %s%n", control.id(), e.getMessage());
+            return Status.error;
+        }
+
+        if (!availableCollectors.contains("adminclient")
+            && referencesAdminClientData(ast.getExpr())) {
+            collectorsUnavailable.add("adminclient");
             return Status.na;
         }
 
         try {
-            var ast = compiler.compile(condition).getAst();
             var program = runtime.createProgram(ast);
             var result = program.eval(activation);
             return Boolean.TRUE.equals(result) ? Status.pass : Status.fail;
@@ -352,10 +337,6 @@ public final class PolicyEngine {
         );
     }
 
-    private static boolean usesAdminClientData(String condition) {
-        return condition != null && ADMIN_CLIENT_VAR.matcher(condition).find();
-    }
-
     /** Backwards-compatible shim used by tests; treats the cluster as vanilla. */
     public ScanResult evaluate(Map<String, Object> collectedData, String clusterName) {
         return evaluate(collectedData, clusterName, "vanilla", "default",
@@ -373,5 +354,36 @@ public final class PolicyEngine {
             return fallback;
         }
         return scoring.weights().getOrDefault(control.severity().name(), fallback);
+    }
+
+    private static boolean referencesAdminClientData(dev.cel.common.ast.CelExpr expr) {
+        return switch (expr.getKind()) {
+            case IDENT -> ADMIN_CLIENT_VARS.contains(expr.ident().name());
+            case SELECT -> referencesAdminClientData(expr.select().operand());
+            case CALL -> {
+                var call = expr.call();
+                boolean targetUsesAdminClient = call.target()
+                    .map(PolicyEngine::referencesAdminClientData)
+                    .orElse(false);
+                yield targetUsesAdminClient
+                    || call.args().stream().anyMatch(PolicyEngine::referencesAdminClientData);
+            }
+            case LIST -> expr.list().elements().stream()
+                .anyMatch(PolicyEngine::referencesAdminClientData);
+            case STRUCT -> expr.struct().entries().stream()
+                .anyMatch(e -> referencesAdminClientData(e.value()));
+            case MAP -> expr.map().entries().stream()
+                .anyMatch(e -> referencesAdminClientData(e.key())
+                    || referencesAdminClientData(e.value()));
+            case COMPREHENSION -> {
+                var c = expr.comprehension();
+                yield referencesAdminClientData(c.iterRange())
+                    || referencesAdminClientData(c.accuInit())
+                    || referencesAdminClientData(c.loopCondition())
+                    || referencesAdminClientData(c.loopStep())
+                    || referencesAdminClientData(c.result());
+            }
+            case CONSTANT, NOT_SET -> false;
+        };
     }
 }
