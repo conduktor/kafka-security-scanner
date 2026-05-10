@@ -35,6 +35,8 @@ public record CollectorContext(
     @Nullable String azureResourceGroup,
     @Nullable String azureNamespace,
     @Nullable String k8sNamespace,
+    @Nullable String gcpToken,
+    @Nullable String gcpProject,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -106,5 +108,9 @@ public record CollectorContext(
 
     public boolean hasK8sNamespace() {
         return k8sNamespace != null && !k8sNamespace.isBlank();
+    }
+
+    public boolean hasGcpToken() {
+        return gcpToken != null && !gcpToken.isBlank();
     }
 }

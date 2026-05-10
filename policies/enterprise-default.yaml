@@ -642,14 +642,13 @@ controls:
     compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "200"]}
 
   - id: KAFKA-NET-003
-    title: "Network segmentation for Kafka"
+    title: "Network segmentation: no cloud firewall opens broker ports to the world"
     severity: high
     category: security
-    description: "Deploy Kafka in isolated network segments with firewall rules"
-    requires: [docs]
-    condition: "brokers.all(b, 'config' in b && 'advertised.listeners' in b.config && !b.config['advertised.listeners'].contains('://0.0.0.0:')) && docs.network_topology.exists"
-    message: "Verify Kafka is deployed in isolated network segment with firewall rules"
-    remediation: "Use VPC/subnet isolation, security groups, and restrict access to broker ports"
+    description: "advertised.listeners must not bind 0.0.0.0; AND every cloud-firewall collector that ran must report no INGRESS+ALLOW rule with 0.0.0.0/0 covering broker ports {9092,9094,9098}. Each cloud probe short-circuits when its SDK / token wasn't supplied."
+    condition: "brokers.all(b, 'config' in b && 'advertised.listeners' in b.config && !b.config['advertised.listeners'].contains('://0.0.0.0:')) && (!('any_sg_open_to_world' in aws) || !aws.any_sg_open_to_world) && (!('firewalls_open_to_world' in gcp) || !gcp.firewalls_open_to_world)"
+    message: "advertised.listeners binds 0.0.0.0, OR an AWS SG / GCP firewall opens broker ports to 0.0.0.0/0"
+    remediation: "Bind advertised.listeners to private DNS; tighten AWS SG and GCP firewall ingress to private subnets / corporate CIDRs"
     compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
 
   - id: KAFKA-NET-004
@@ -1476,6 +1475,18 @@ controls:
     message: "Azure Event Hubs namespace is public AND has no private endpoints"
     remediation: "Set publicNetworkAccess=Disabled and provision a Private Endpoint"
     compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7"], cwe: ["284", "923"]}
+
+  # ═══════════════ GCP (1) ═══════════════
+  - id: KAFKA-GCP-001
+    title: "GCP firewall rules don't expose broker ports to the internet"
+    severity: critical
+    category: security
+    description: "compute.googleapis.com firewall list: no INGRESS+ALLOW rule with sourceRanges=0.0.0.0/0 may cover broker ports {9092,9094,9098}"
+    requires: [gcp]
+    condition: "gcp.api_authenticated && !gcp.firewalls_open_to_world"
+    message: "A GCP firewall rule allows 0.0.0.0/0 ingress on a Kafka broker port"
+    remediation: "Tighten the firewall rule's sourceRanges to private subnets / corporate CIDRs; or restrict the targetTags so it doesn't apply to broker VMs"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
 
 scoring:
   weights:

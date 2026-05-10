@@ -197,6 +197,14 @@ public final class Main implements Runnable {
             description = "Kubernetes namespace for the k8s collector (uses local kubectl)")
     private String k8sNamespace;
 
+    @Option(names = {"--gcp-token"}, defaultValue = "${GCP_TOKEN}",
+            description = "GCP OAuth bearer (env: GCP_TOKEN; obtain via `gcloud auth print-access-token`)")
+    private String gcpToken;
+
+    @Option(names = {"--gcp-project"}, defaultValue = "${GCP_PROJECT}",
+            description = "GCP project id for the gcp firewall collector")
+    private String gcpProject;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -266,6 +274,8 @@ public final class Main implements Runnable {
                     azureResourceGroup.isBlank() ? null : azureResourceGroup,
                     azureNamespace.isBlank() ? null : azureNamespace,
                     k8sNamespace == null || k8sNamespace.isBlank() ? null : k8sNamespace,
+                    gcpToken == null || gcpToken.isBlank() ? null : gcpToken,
+                    gcpProject == null || gcpProject.isBlank() ? null : gcpProject,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -329,6 +339,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("k8s") || enabled.contains("kubernetes")) {
                     collectors.add(new io.kafkascanner.collectors.K8sNetworkPolicyCollector());
+                }
+                if (enabled.contains("gcp")) {
+                    collectors.add(new io.kafkascanner.collectors.GcpFirewallCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
