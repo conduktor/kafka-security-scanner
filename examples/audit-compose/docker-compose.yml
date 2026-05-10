@@ -1,0 +1,96 @@
+services:
+  kafka:
+    image: apache/kafka:4.2.0
+    container_name: kss-audit-kafka
+    hostname: kafka
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29192,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29192
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_JMX_PORT: "19999"
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_JMX_OPTS: >-
+        -Dcom.sun.management.jmxremote=true
+        -Dcom.sun.management.jmxremote.local.only=false
+        -Dcom.sun.management.jmxremote.authenticate=false
+        -Dcom.sun.management.jmxremote.ssl=false
+        -Dcom.sun.management.jmxremote.port=19999
+        -Dcom.sun.management.jmxremote.rmi.port=19999
+        -Djava.rmi.server.hostname=localhost
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "29192:29192"
+      - "19999:19999"
+    healthcheck:
+      test: ["CMD-SHELL", "env -u KAFKA_JMX_OPTS -u JMX_PORT /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    container_name: kss-audit-schema-registry
+    hostname: schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_SCHEMA_REGISTRY_GROUP_ID: kss-audit-schema-registry
+    ports:
+      - "28081:8081"
+
+  connect:
+    image: confluentinc/cp-kafka-connect:7.6.0
+    container_name: kss-audit-connect
+    hostname: connect
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_PORT: 8083
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_GROUP_ID: kss-audit-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+    ports:
+      - "28083:8083"
+    volumes:
+      - ./connect/input:/data:ro
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kss-audit-prometheus
+    hostname: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.listen-address=0.0.0.0:9090
+    ports:
+      - "29090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules.yml:/etc/prometheus/rules.yml:ro

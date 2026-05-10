@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Kafka Security Scanner"
+  short_description: "Run real Kafka scans with reports"
+  default_prompt: "Use $run-kafka-security-scanner to scan my Kafka cluster and show the report."

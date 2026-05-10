@@ -124,7 +124,7 @@ public final class ConnectCollector implements Collector {
                     }
                 }
 
-                if (cfg.containsKey("topics") || cfg.containsKey("topics.regex")) {
+                if (declaresTopicSet(cfg)) {
                     anyTopicAuditable = true;
                 } else {
                     allTopicsAuditable = false;
@@ -171,6 +171,17 @@ public final class ConnectCollector implements Collector {
             }
         }
         return out;
+    }
+
+    private static boolean declaresTopicSet(Map<String, String> cfg) {
+        return hasNonBlank(cfg, "topics")
+            || hasNonBlank(cfg, "topics.regex")
+            || hasNonBlank(cfg, "topic");
+    }
+
+    private static boolean hasNonBlank(Map<String, String> cfg, String key) {
+        var value = cfg.get(key);
+        return value != null && !value.isBlank();
     }
 
     private static String urlEncode(String s) {

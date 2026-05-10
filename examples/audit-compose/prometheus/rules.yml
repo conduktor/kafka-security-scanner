@@ -1,0 +1,33 @@
+groups:
+  - name: kafka-audit
+    rules:
+      - alert: KafkaAuthenticationFailures
+        expr: kafka_auth_failures_total > 0
+        for: 1m
+        labels:
+          severity: warning
+      - alert: KafkaAclDenied
+        expr: kafka_acl_denied_total > 0
+        for: 1m
+        labels:
+          severity: warning
+      - alert: KafkaQuotaBreach
+        expr: kafka_quota_exceeded_total > 0
+        for: 1m
+        labels:
+          severity: warning
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_under_replicated_partitions > 0 or kafka_offline_partitions > 0
+        for: 1m
+        labels:
+          severity: critical
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag > 1000 or kafka_records_lag_max > 1000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: KafkaTrafficAnomaly
+        expr: abs(kafka_request_rate - avg_over_time(kafka_request_rate[15m])) > 3 * stddev_over_time(kafka_request_rate[15m])
+        for: 5m
+        labels:
+          severity: warning

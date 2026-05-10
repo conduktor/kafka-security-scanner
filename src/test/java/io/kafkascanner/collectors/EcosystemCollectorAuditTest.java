@@ -42,6 +42,38 @@ class EcosystemCollectorAuditTest {
     }
 
     @Test
+    void connectSourceConnectorSingularTopicIsAuditableEvidence() throws IOException {
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/", exchange -> {
+            var path = exchange.getRequestURI().getPath();
+            if ("/connectors".equals(path)) {
+                respond(exchange, 200, "[\"audit-file-source\"]");
+            } else if ("/connectors/audit-file-source/config".equals(path)) {
+                respond(exchange, 200, """
+                    {
+                      "connector.class": "org.apache.kafka.connect.file.FileStreamSourceConnector",
+                      "topic": "audit.orders",
+                      "errors.tolerance": "all",
+                      "errors.deadletterqueue.topic.name": "audit.orders.dlq"
+                    }
+                    """);
+            } else if ("/connector-plugins".equals(path)) {
+                respond(exchange, 200, "[]");
+            } else {
+                respond(exchange, 200, "{}");
+            }
+        });
+        server.start();
+
+        var ctx = CollectorTestContexts.ecosystem(baseUrl(), null, false);
+        var connect = (Map<?, ?>) new ConnectCollector().collect(ctx).get("connect");
+
+        assertThat(connect.get("connectors_enumerated")).isEqualTo(true);
+        assertThat(connect.get("any_connector_topic_listed")).isEqualTo(true);
+        assertThat(connect.get("all_connector_topics_listed")).isEqualTo(true);
+    }
+
+    @Test
     void schemaRegistryDoesNotPostUnlessActiveProbesAreAllowed() throws IOException {
         var posts = new AtomicInteger();
         startSchemaRegistryFixture(posts);

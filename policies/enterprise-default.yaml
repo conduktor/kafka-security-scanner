@@ -481,7 +481,7 @@ controls:
     requires: [connect]
     condition: "connect.reachable && connect.requires_auth && connect.connectors_enumerated && (size(connect.connectors) == 0 || connect.all_connector_topics_listed)"
     message: "Connect REST is anonymous, unauthorized, or at least one connector does not list its topics — audit cannot attribute writes"
-    remediation: "Enable Connect REST auth (basic.auth.user.info / oauth2); ensure every connector config sets `topics` or `topics.regex`"
+    remediation: "Enable Connect REST auth (basic.auth.user.info / oauth2); ensure every sink connector config sets `topics` or `topics.regex`, and every source connector declares `topic`"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
   - id: KAFKA-AUDIT-009
