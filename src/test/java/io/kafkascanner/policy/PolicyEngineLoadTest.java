@@ -95,6 +95,32 @@ class PolicyEngineLoadTest {
     }
 
     @Test
+    void aclControlsFailWhenAuthorizerIsKnownDisabled() throws Exception {
+        var engine = PolicyEngine.load(new File("policies/enterprise-default.yaml"));
+        var result = engine.evaluate(Map.of(
+            "broker", java.util.List.of(Map.of("config", Map.of(
+                "authorizer.class.name", "",
+                "allow.everyone.if.no.acl.found", "true"
+            ))),
+            "kraft", Map.of("mode", "kraft"),
+            "acl", java.util.List.of(),
+            "acl_metadata", Map.of(
+                "collected", true,
+                "count", 0L,
+                "authorizer_enabled", false,
+                "error", "SecurityDisabledException: No Authorizer is configured"
+            )
+        ), "partial", "vanilla", "test", java.util.Set.of("adminclient"));
+
+        assertThat(result.findings())
+            .filteredOn(f -> "KAFKA-ACL-001".equals(f.controlId()))
+            .singleElement()
+            .extracting("status")
+            .isEqualTo(Status.fail);
+        assertThat(result.collectorsUnavailable()).doesNotContain("adminclient:acl");
+    }
+
+    @Test
     void scanResultReportsCollectedClusterMode() throws Exception {
         var engine = PolicyEngine.load(new File("policies/test-minimal-valid.yaml"));
         var result = engine.evaluate(Map.of(

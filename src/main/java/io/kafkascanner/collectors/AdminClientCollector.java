@@ -1,9 +1,11 @@
 package io.kafkascanner.collectors;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.apache.kafka.common.errors.SecurityDisabledException;
 
 /**
  * Collector that talks to the Kafka AdminClient: brokers, topics, ACLs, KRaft state.
@@ -46,7 +48,7 @@ public final class AdminClientCollector implements Collector {
 
             putOrLog(data, "broker", brokers, timeoutSeconds, "broker");
             putOrLog(data, "topic", topics, timeoutSeconds, "topic");
-            putOrLog(data, "acl", acls, timeoutSeconds, "acl");
+            putAclOrRecordDisabled(data, acls, timeoutSeconds);
             putOrLog(data, "kraft", cluster, timeoutSeconds, "kraft");
             putOrLog(data, "quota", quotas, timeoutSeconds, "quota");
         }
@@ -58,6 +60,11 @@ public final class AdminClientCollector implements Collector {
         var aclMeta = new java.util.HashMap<String, Object>();
         aclMeta.put("collected", data.containsKey("acl"));
         aclMeta.put("count", (long) aclList.size());
+        aclMeta.put("authorizer_enabled",
+            !Boolean.FALSE.equals(data.get("acl_authorizer_enabled")));
+        if (data.get("acl_collect_error") instanceof String error) {
+            aclMeta.put("error", error);
+        }
         aclMeta.put("distinct_principal_count", aclList.stream()
             .map(a -> a.getOrDefault("principal", ""))
             .distinct()
@@ -120,5 +127,40 @@ public final class AdminClientCollector implements Collector {
         } catch (Exception e) {
             System.err.println("[adminclient] " + name + " collect failed: " + e.getMessage());
         }
+    }
+
+    private static void putAclOrRecordDisabled(
+        Map<String, Object> data,
+        java.util.concurrent.Future<?> future,
+        int timeoutSeconds
+    ) {
+        try {
+            data.put("acl", future.get(timeoutSeconds, TimeUnit.SECONDS));
+        } catch (Exception e) {
+            var root = rootCause(e);
+            if (root instanceof SecurityDisabledException || isNoAuthorizer(root)) {
+                data.put("acl", List.of());
+                data.put("acl_authorizer_enabled", false);
+                data.put("acl_collect_error", root.getClass().getSimpleName()
+                    + ": " + root.getMessage());
+                System.err.println("[adminclient] acl authorizer disabled; "
+                    + "treating ACL evidence as empty");
+                return;
+            }
+            System.err.println("[adminclient] acl collect failed: " + e.getMessage());
+        }
+    }
+
+    private static Throwable rootCause(Throwable throwable) {
+        var current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private static boolean isNoAuthorizer(Throwable throwable) {
+        var message = throwable.getMessage();
+        return message != null && message.contains("No Authorizer is configured");
     }
 }

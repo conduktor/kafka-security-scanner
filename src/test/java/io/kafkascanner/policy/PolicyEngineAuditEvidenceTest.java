@@ -146,9 +146,41 @@ class PolicyEngineAuditEvidenceTest {
         assertThat(result.controlResults()).singleElement()
             .satisfies(control -> {
                 assertThat(control.status()).isEqualTo(na);
-                assertThat(control.message()).contains("Not applicable");
+                assertThat(control.message()).contains("Out of scope");
                 assertThat(control.message()).doesNotContain("does not require auth");
                 assertThat(control.evidence().get("not_applicable")).isEqualTo(true);
+            });
+    }
+
+    @Test
+    void optionalDeploymentMissingCollectorIsOutOfScopeInsteadOfUnavailable(@TempDir Path tmp)
+        throws Exception {
+        var policy = tmp.resolve("gcp.yaml");
+        Files.writeString(policy, """
+            name: gcp
+            version: "1"
+            controls:
+              - id: GCP-001
+                title: GCP firewall
+                severity: critical
+                category: security
+                requires: [gcp]
+                condition: "gcp.api_authenticated && !gcp.firewalls_open_to_world"
+                message: GCP firewall is open
+                remediation: fix
+            """);
+
+        var engine = PolicyEngine.load(policy.toFile());
+        var result = engine.evaluate(Map.of(), "cluster", "vanilla", "hostname:localhost", Set.of());
+
+        assertThat(result.collectorsUnavailable()).isEmpty();
+        assertThat(result.controlResults()).singleElement()
+            .satisfies(control -> {
+                assertThat(control.status()).isEqualTo(na);
+                assertThat(control.message()).contains("Out of scope");
+                assertThat(control.evidence().get("not_applicable")).isEqualTo(true);
+                assertThat(control.evidence().get("applicable_deployments"))
+                    .isEqualTo(List.of("GCP project/firewall"));
             });
     }
 }

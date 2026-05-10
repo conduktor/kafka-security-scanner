@@ -57,6 +57,12 @@ public final class PolicyEngine {
         "rpcloud", "redpanda-cloud",
         "azure", "azure-eventhubs"
     );
+    private static final Map<String, String> OPTIONAL_DEPLOYMENT_COLLECTORS = Map.of(
+        "gcp", "GCP project/firewall",
+        "k8s", "Kubernetes deployment",
+        "restproxy", "Kafka REST Proxy",
+        "streams", "Kafka Streams application"
+    );
     private static final Set<String> ADMIN_CLIENT_VARS = Set.of(
         "brokers", "topics", "acls", "acl_meta", "topic_meta",
         "quotas", "quota_meta", "cluster"
@@ -338,6 +344,14 @@ public final class PolicyEngine {
                         evidence.put("not_applicable", true);
                         return new Resolution(Status.na, evidence);
                     }
+                    var optionalDeployment = OPTIONAL_DEPLOYMENT_COLLECTORS.get(req);
+                    if (optionalDeployment != null) {
+                        evidence.put("reason", "not applicable for declared scan scope");
+                        evidence.put("missing_collectors", List.of(req));
+                        evidence.put("applicable_deployments", List.of(optionalDeployment));
+                        evidence.put("not_applicable", true);
+                        return new Resolution(Status.na, evidence);
+                    }
                     collectorsUnavailable.add(req);
                     evidence.put("reason", "required collector not available");
                     evidence.put("missing_collectors", List.of(req));
@@ -452,7 +466,13 @@ public final class PolicyEngine {
     private static String unavailableMessage(Control control, Map<String, Object> evidence) {
         var missing = evidence.get("missing_collectors");
         if (Boolean.TRUE.equals(evidence.get("not_applicable"))) {
-            return "Not applicable for this Kafka flavor; requires collector "
+            var deployments = evidence.get("applicable_deployments");
+            if (deployments != null) {
+                return "Out of scope for this scan; applies to "
+                    + String.valueOf(deployments) + " and requires collector "
+                    + String.valueOf(missing) + ".";
+            }
+            return "Out of scope for this Kafka flavor; requires collector "
                 + String.valueOf(missing) + ".";
         }
         if (missing != null) {
