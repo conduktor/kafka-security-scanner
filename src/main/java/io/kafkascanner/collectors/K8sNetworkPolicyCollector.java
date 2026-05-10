@@ -90,7 +90,7 @@ public final class K8sNetworkPolicyCollector implements Collector {
             var podSelector = nestedMap(spec, "podSelector");
             var matchLabels = podSelector == null ? null : nestedMap(podSelector, "matchLabels");
             var ingress = spec.get("ingress");
-            int ingressSize = ingress instanceof List<?> il ? il.size() : 0;
+            int ingressSize = ingress instanceof List<?> ingressList ? ingressList.size() : 0;
 
             // default-deny pattern: empty podSelector + no ingress rules
             boolean emptySelector = podSelector == null
@@ -106,7 +106,8 @@ public final class K8sNetworkPolicyCollector implements Collector {
                 if (podLabels == null) {
                     continue;
                 }
-                if (matchesLabels(matchLabels, podLabels)) {
+                if (matchesLabels(matchLabels, podLabels)
+                    && hasRestrictiveIngress(ingress)) {
                     kafkaProtected = true;
                     break;
                 }
@@ -209,5 +210,21 @@ public final class K8sNetworkPolicyCollector implements Collector {
             }
         }
         return true;
+    }
+
+    private static boolean hasRestrictiveIngress(@Nullable Object ingress) {
+        if (!(ingress instanceof List<?> rules) || rules.isEmpty()) {
+            return false;
+        }
+        for (var rule : rules) {
+            if (!(rule instanceof Map<?, ?> ruleMap)) {
+                continue;
+            }
+            var from = ruleMap.get("from");
+            if (from instanceof List<?> fromList && !fromList.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 }
