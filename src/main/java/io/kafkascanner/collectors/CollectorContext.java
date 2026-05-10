@@ -24,6 +24,7 @@ public record CollectorContext(
     @Nullable String ccClusterId,
     @Nullable String awsRegion,
     @Nullable String awsMskClusterArn,
+    @Nullable String cisReportPath,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -75,5 +76,9 @@ public record CollectorContext(
     public boolean hasAwsConfig() {
         return (awsRegion != null && !awsRegion.isBlank())
             || (awsMskClusterArn != null && !awsMskClusterArn.isBlank());
+    }
+
+    public boolean hasCisReport() {
+        return cisReportPath != null && !cisReportPath.isBlank();
     }
 }

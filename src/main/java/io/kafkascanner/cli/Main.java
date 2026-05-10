@@ -153,6 +153,10 @@ public final class Main implements Runnable {
             description = "MSK cluster ARN; if omitted the collector lists the region's clusters and matches by bootstrap")
     private String awsMskClusterArn;
 
+    @Option(names = {"--cis-report"}, defaultValue = "",
+            description = "Path to a CIS / kube-bench / inspec JSON report for the cis collector")
+    private String cisReportPath;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -210,6 +214,7 @@ public final class Main implements Runnable {
                     ccClusterId == null || ccClusterId.isBlank() ? null : ccClusterId,
                     awsRegion == null || awsRegion.isBlank() ? null : awsRegion,
                     awsMskClusterArn.isBlank() ? null : awsMskClusterArn,
+                    cisReportPath.isBlank() ? null : cisReportPath,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -258,6 +263,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("awsmsk") || enabled.contains("msk")) {
                     collectors.add(new io.kafkascanner.collectors.AwsMskCollector());
+                }
+                if (enabled.contains("cis")) {
+                    collectors.add(new io.kafkascanner.collectors.CisCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)

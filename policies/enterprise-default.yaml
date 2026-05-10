@@ -1037,13 +1037,13 @@ controls:
     compliance: {pci_dss: ["6.3"], nist: ["SI-2", "CM-3"], cwe: ["1104"]}
 
   - id: KAFKA-OPS-002
-    title: "Configuration hardening"
+    title: "Configuration hardening (broker config + CIS report ≥ 90% pass)"
     severity: high
     category: security
-    description: "Remove default accounts, disable unnecessary features, secure JMX"
-    condition: "brokers.all(b, 'config' in b && b.config['auto.create.topics.enable'] == 'false' && b.config['unclean.leader.election.enable'] == 'false' && 'super.users' in b.config && b.config['super.users'].size() > 0)"
-    message: "Auto topic creation should be disabled in production"
-    remediation: "Disable auto.create.topics, remove default accounts, secure JMX endpoints"
+    description: "Hardening must show on two axes: broker-level safe defaults (auto.create.topics=false, unclean.leader=false, super.users set) AND a CIS benchmark report (cis-cat / kube-bench / inspec) with ≥ 90% controls passing."
+    condition: "brokers.all(b, 'config' in b && b.config['auto.create.topics.enable'] == 'false' && b.config['unclean.leader.election.enable'] == 'false' && 'super.users' in b.config && b.config['super.users'].size() > 0) && (!('report_present' in cis) || (cis.report_present && cis.pass_ratio >= 0.9))"
+    message: "Broker-level hardening missing OR CIS benchmark report below 90% pass ratio"
+    remediation: "Pin auto.create.topics=false, unclean.leader.election=false, super.users; run cis-cat/kube-bench and pass --cis-report to feed the result"
     compliance: {pci_dss: ["2.2"], nist: ["CM-6", "CM-7"], cwe: ["1188", "798"]}
 
   - id: KAFKA-OPS-003
