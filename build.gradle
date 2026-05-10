@@ -42,6 +42,13 @@ dependencies {
     // Logging — slf4j-simple keeps the CLI quiet by default but lets users opt in.
     implementation 'org.slf4j:slf4j-simple:2.0.16'
 
+    // AWS SDK v2 (modular) — only the services touched by AwsMskCollector.
+    // Adds ~25 MB to the dist; the user explicitly asked for MSK support.
+    implementation 'software.amazon.awssdk:kafka:2.29.30'
+    implementation 'software.amazon.awssdk:cloudwatch:2.29.30'
+    implementation 'software.amazon.awssdk:ec2:2.29.30'
+    implementation 'software.amazon.awssdk:sts:2.29.30'
+
     // NullAway annotations
     compileOnly 'org.checkerframework:checker-qual:3.48.0'
 
