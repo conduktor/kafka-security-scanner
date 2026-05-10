@@ -45,7 +45,8 @@ public final class CisCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        return context.cisReportPath() != null && !context.cisReportPath().isBlank();
+        var reportPath = context.cisReportPath();
+        return reportPath != null && !reportPath.isBlank();
     }
 
     @Override

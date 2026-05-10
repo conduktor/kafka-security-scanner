@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
@@ -240,11 +239,5 @@ public final class JmxCollector implements Collector {
         if (value != null) {
             jmx.put(key, value);
         }
-    }
-
-    /** Useful for matching beans whose canonical name is case-sensitive. */
-    @SuppressWarnings("unused")
-    private static String normalize(String s) {
-        return s == null ? "" : s.toLowerCase(Locale.ROOT);
     }
 }

@@ -51,8 +51,10 @@ public final class ConfluentCloudCollector implements Collector {
     @Override
     public boolean isAvailable(CollectorContext context) {
         // Activate when the operator hands over creds OR the bootstrap is on a CC host.
-        var hasCreds = context.ccApiKey() != null && !context.ccApiKey().isBlank()
-            && context.ccApiSecret() != null && !context.ccApiSecret().isBlank();
+        var apiKey = context.ccApiKey();
+        var apiSecret = context.ccApiSecret();
+        var hasCreds = apiKey != null && !apiKey.isBlank()
+            && apiSecret != null && !apiSecret.isBlank();
         var ccFlavor = "confluent-cloud".equals(context.kafkaFlavor());
         return hasCreds || ccFlavor;
     }
@@ -87,9 +89,10 @@ public final class ConfluentCloudCollector implements Collector {
 
         // If we have creds AND a cluster id, fetch the spec so encryption /
         // network / cluster_type controls have something to read.
-        if (auth != null && context.ccClusterId() != null
-            && !context.ccClusterId().isBlank()) {
-            var clusterId = context.ccClusterId().trim();
+        var configuredClusterId = context.ccClusterId();
+        if (auth != null && configuredClusterId != null
+            && !configuredClusterId.isBlank()) {
+            var clusterId = configuredClusterId.trim();
             var clusterProbe = probe(
                 REST_BASE + "/cmk/v2/clusters/" + clusterId,
                 auth, context.timeout());

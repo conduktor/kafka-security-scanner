@@ -55,7 +55,8 @@ public final class GcpFirewallCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        return context.gcpToken() != null && !context.gcpToken().isBlank();
+        var token = context.gcpToken();
+        return token != null && !token.isBlank();
     }
 
     @Override

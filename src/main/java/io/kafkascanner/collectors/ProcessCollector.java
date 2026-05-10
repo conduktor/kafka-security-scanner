@@ -107,13 +107,23 @@ public final class ProcessCollector implements Collector {
     private static java.util.Optional<Long> findKafkaPid() {
         try (var procs = Files.list(Path.of("/proc"))) {
             return procs
-                .filter(p -> p.getFileName().toString().chars().allMatch(Character::isDigit))
-                .filter(ProcessCollector::isKafkaProcess)
-                .map(p -> Long.parseLong(p.getFileName().toString()))
+                .flatMap(path -> fileName(path)
+                    .map(name -> new ProcEntry(path, name))
+                    .stream())
+                .filter(entry -> entry.fileName().chars().allMatch(Character::isDigit))
+                .filter(entry -> isKafkaProcess(entry.path()))
+                .map(entry -> Long.parseLong(entry.fileName()))
                 .findFirst();
         } catch (IOException e) {
             return java.util.Optional.empty();
         }
+    }
+
+    private record ProcEntry(Path path, String fileName) { }
+
+    private static java.util.Optional<String> fileName(Path path) {
+        var fileName = path.getFileName();
+        return fileName == null ? java.util.Optional.empty() : java.util.Optional.of(fileName.toString());
     }
 
     private static boolean isKafkaProcess(Path procDir) {

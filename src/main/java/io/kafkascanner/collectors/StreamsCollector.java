@@ -48,10 +48,10 @@ public final class StreamsCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        return (context.streamsJmxHostPorts() != null
-                && !context.streamsJmxHostPorts().isBlank())
-            || (context.streamsStateDir() != null
-                && !context.streamsStateDir().isBlank());
+        var jmxHostPorts = context.streamsJmxHostPorts();
+        var stateDir = context.streamsStateDir();
+        return (jmxHostPorts != null && !jmxHostPorts.isBlank())
+            || (stateDir != null && !stateDir.isBlank());
     }
 
     @Override

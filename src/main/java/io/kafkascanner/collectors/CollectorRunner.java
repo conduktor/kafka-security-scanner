@@ -22,7 +22,13 @@ import java.util.concurrent.TimeUnit;
  */
 public final class CollectorRunner {
 
-    public record Outcome(Map<String, Object> data, Set<String> ran, Set<String> skipped) { }
+    public record Outcome(Map<String, Object> data, Set<String> ran, Set<String> skipped) {
+        public Outcome {
+            data = data == null ? Map.of() : Map.copyOf(data);
+            ran = ran == null ? Set.of() : Set.copyOf(ran);
+            skipped = skipped == null ? Set.of() : Set.copyOf(skipped);
+        }
+    }
 
     private CollectorRunner() { }
 

@@ -44,7 +44,8 @@ public final class ZkAdminCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        return context.zkAdminHostPort() != null && !context.zkAdminHostPort().isBlank();
+        var hostPort = context.zkAdminHostPort();
+        return hostPort != null && !hostPort.isBlank();
     }
 
     @Override

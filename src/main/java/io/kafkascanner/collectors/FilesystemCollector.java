@@ -67,7 +67,10 @@ public final class FilesystemCollector implements Collector {
         try (Stream<Path> entries = Files.list(dir)) {
             entries.forEach(p -> {
                 if (Files.isRegularFile(p)) {
-                    files.put(p.getFileName().toString(), inspect(p));
+                    var fileName = p.getFileName();
+                    if (fileName != null) {
+                        files.put(fileName.toString(), inspect(p));
+                    }
                 }
             });
         } catch (IOException e) {

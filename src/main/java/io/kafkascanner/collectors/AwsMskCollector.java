@@ -182,12 +182,14 @@ public final class AwsMskCollector implements Collector {
     }
 
     private static @Nullable Region pickRegion(CollectorContext context) {
-        if (context.awsRegion() != null && !context.awsRegion().isBlank()) {
-            return Region.of(context.awsRegion());
+        var configuredRegion = context.awsRegion();
+        if (configuredRegion != null && !configuredRegion.isBlank()) {
+            return Region.of(configuredRegion);
         }
         // Try parse from cluster ARN
-        if (context.awsMskClusterArn() != null && !context.awsMskClusterArn().isBlank()) {
-            var parts = context.awsMskClusterArn().split(":");
+        var clusterArn = context.awsMskClusterArn();
+        if (clusterArn != null && !clusterArn.isBlank()) {
+            var parts = clusterArn.split(":");
             if (parts.length >= 4 && !parts[3].isBlank()) {
                 return Region.of(parts[3]);
             }

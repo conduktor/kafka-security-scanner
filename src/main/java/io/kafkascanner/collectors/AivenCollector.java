@@ -55,7 +55,8 @@ public final class AivenCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        var hasToken = context.aivenToken() != null && !context.aivenToken().isBlank();
+        var token = context.aivenToken();
+        var hasToken = token != null && !token.isBlank();
         var aivenFlavor = "aiven".equals(context.kafkaFlavor());
         return hasToken || aivenFlavor;
     }

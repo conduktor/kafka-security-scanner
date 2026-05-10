@@ -41,7 +41,8 @@ public final class K8sNetworkPolicyCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        return context.k8sNamespace() != null && !context.k8sNamespace().isBlank();
+        var namespace = context.k8sNamespace();
+        return namespace != null && !namespace.isBlank();
     }
 
     @Override

@@ -31,8 +31,8 @@ public final class ConsumerJmxCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        return context.consumerJmxHostPorts() != null
-            && !context.consumerJmxHostPorts().isBlank();
+        var hostPorts = context.consumerJmxHostPorts();
+        return hostPorts != null && !hostPorts.isBlank();
     }
 
     @Override

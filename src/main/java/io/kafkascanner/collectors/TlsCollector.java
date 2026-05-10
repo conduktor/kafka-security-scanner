@@ -5,7 +5,6 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -73,7 +72,12 @@ public final class TlsCollector implements Collector {
         try {
             var ctx = SSLContext.getInstance("TLS");
             ctx.init(null, new TrustManager[] {INSPECTING_TRUST_MANAGER}, null);
-            try (SSLSocket socket = (SSLSocket) ctx.getSocketFactory().createSocket()) {
+            try (var rawSocket = ctx.getSocketFactory().createSocket()) {
+                if (!(rawSocket instanceof SSLSocket socket)) {
+                    tls.put("handshake_ok", false);
+                    tls.put("error", "unexpected socket type: " + rawSocket.getClass().getName());
+                    return Map.of("tls", tls);
+                }
                 socket.connect(new java.net.InetSocketAddress(host, port), HANDSHAKE_TIMEOUT_MS);
                 if (!isIpLiteral(host)) {
                     var params = new SSLParameters();
@@ -322,20 +326,4 @@ public final class TlsCollector implements Collector {
             return new X509Certificate[0];
         }
     };
-
-    @SuppressWarnings("unused")
-    private static String[] safeArray(Object o) {
-        if (o instanceof String[] arr) {
-            return arr.clone();
-        }
-        if (o instanceof java.util.Collection<?> c) {
-            return c.stream().map(Object::toString).toArray(String[]::new);
-        }
-        return new String[0];
-    }
-
-    @SuppressWarnings("unused")
-    private static String join(String[] parts) {
-        return String.join(",", Arrays.asList(parts));
-    }
 }

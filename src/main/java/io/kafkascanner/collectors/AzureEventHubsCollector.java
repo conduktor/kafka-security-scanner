@@ -59,7 +59,8 @@ public final class AzureEventHubsCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        var hasToken = context.azureToken() != null && !context.azureToken().isBlank();
+        var token = context.azureToken();
+        var hasToken = token != null && !token.isBlank();
         var azureFlavor = "azure-eventhubs".equals(context.kafkaFlavor());
         return hasToken || azureFlavor;
     }

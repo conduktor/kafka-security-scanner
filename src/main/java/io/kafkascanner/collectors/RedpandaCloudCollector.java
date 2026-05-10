@@ -52,7 +52,8 @@ public final class RedpandaCloudCollector implements Collector {
 
     @Override
     public boolean isAvailable(CollectorContext context) {
-        var hasToken = context.rpToken() != null && !context.rpToken().isBlank();
+        var token = context.rpToken();
+        var hasToken = token != null && !token.isBlank();
         var rpFlavor = "redpanda-cloud".equals(context.kafkaFlavor());
         return hasToken || rpFlavor;
     }
@@ -77,8 +78,9 @@ public final class RedpandaCloudCollector implements Collector {
         out.put("region", "");
         out.put("is_serverless", false);
 
-        if (auth != null && context.rpClusterId() != null && !context.rpClusterId().isBlank()) {
-            var url = API_BASE + "/v1beta2/clusters/" + urlEncode(context.rpClusterId().trim());
+        var configuredClusterId = context.rpClusterId();
+        if (auth != null && configuredClusterId != null && !configuredClusterId.isBlank()) {
+            var url = API_BASE + "/v1beta2/clusters/" + urlEncode(configuredClusterId.trim());
             var clusterProbe = probe(url, auth, context.timeout());
             out.put("cluster_status", clusterProbe.status);
             if (clusterProbe.body instanceof Map<?, ?> body) {

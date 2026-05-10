@@ -15,7 +15,11 @@ public final class ScanModels {
     public record Policy(
         String name, String version, String description,
         List<Control> controls, Scoring scoring
-    ) {}
+    ) {
+        public Policy {
+            controls = controls == null ? List.of() : List.copyOf(controls);
+        }
+    }
 
     public record Control(
         String id, String title, Severity severity, Category category,
@@ -24,7 +28,14 @@ public final class ScanModels {
         @JsonProperty("covered_by_kafka_flavor") List<String> coveredByKafkaFlavor,
         List<String> requires,
         @JsonProperty("requires_per_mode") Map<String, List<String>> requiresPerMode
-    ) {}
+    ) {
+        public Control {
+            coveredByKafkaFlavor = coveredByKafkaFlavor == null
+                ? List.of() : List.copyOf(coveredByKafkaFlavor);
+            requires = requires == null ? List.of() : List.copyOf(requires);
+            requiresPerMode = requiresPerMode == null ? Map.of() : Map.copyOf(requiresPerMode);
+        }
+    }
 
     public enum Severity { critical, high, medium, low, info }
     public enum Category { security, reliability, operational }
@@ -34,9 +45,19 @@ public final class ScanModels {
         @JsonProperty("pci_dss") List<String> pciDss,
         List<String> soc2,
         List<String> iso27001
-    ) {}
+    ) {
+        public Compliance {
+            pciDss = pciDss == null ? List.of() : List.copyOf(pciDss);
+            soc2 = soc2 == null ? List.of() : List.copyOf(soc2);
+            iso27001 = iso27001 == null ? List.of() : List.copyOf(iso27001);
+        }
+    }
 
-    public record Scoring(Map<String, Integer> weights, @JsonProperty("pass_threshold") int passThreshold) {}
+    public record Scoring(Map<String, Integer> weights, @JsonProperty("pass_threshold") int passThreshold) {
+        public Scoring {
+            weights = weights == null ? Map.of() : Map.copyOf(weights);
+        }
+    }
 
     // ── Findings ─────────────────────────────────────────────────
     public record Finding(
@@ -44,7 +65,11 @@ public final class ScanModels {
         Severity severity, Category category, Status status,
         String title, String message, String remediation,
         Map<String, Object> evidence, Compliance compliance
-    ) {}
+    ) {
+        public Finding {
+            evidence = evidence == null ? Map.of() : Map.copyOf(evidence);
+        }
+    }
 
     // ── Scan Result ──────────────────────────────────────────────
     public record ScanResult(
@@ -62,7 +87,14 @@ public final class ScanModels {
         @JsonProperty("collectors_unavailable") List<String> collectorsUnavailable,
         List<Finding> findings,
         ClusterInfo cluster
-    ) {}
+    ) {
+        public ScanResult {
+            collectorsUsed = collectorsUsed == null ? List.of() : List.copyOf(collectorsUsed);
+            collectorsUnavailable = collectorsUnavailable == null
+                ? List.of() : List.copyOf(collectorsUnavailable);
+            findings = findings == null ? List.of() : List.copyOf(findings);
+        }
+    }
 
     public record ClusterInfo(
         String name, int brokers, int topics,

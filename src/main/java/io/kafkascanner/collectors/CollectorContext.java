@@ -42,6 +42,10 @@ public record CollectorContext(
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
+    public CollectorContext {
+        saslProps = saslProps == null ? Map.of() : Map.copyOf(saslProps);
+    }
+
     public boolean hasAdminClient() {
         return adminClient != null;
     }
