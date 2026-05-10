@@ -203,7 +203,7 @@ controls:
     category: security
     description: "Configure ssl.truststore with trusted CA certificates"
     requires: [tls]
-    condition: "brokers.all(b, 'config' in b && 'ssl.truststore.location' in b.config && b.config['ssl.truststore.location'].size() > 0) && 'handshake_ok' in tls && tls.handshake_ok"
+    condition: "brokers.all(b, 'config' in b && 'ssl.truststore.location' in b.config && b.config['ssl.truststore.location'].size() > 0) && 'handshake_ok' in tls && tls.handshake_ok && 'chain_trusted_by_default_ca' in tls && tls.chain_trusted_by_default_ca"
     message: "Truststore not configured — certificates not validated"
     remediation: "Set ssl.truststore.location and ssl.truststore.password"
     compliance: {pci_dss: ["4.1"], nist: ["SC-17", "SC-12"], cwe: ["295", "296", "297"]}
@@ -477,10 +477,10 @@ controls:
     title: "Connect topics enumerated + REST auth + audit pipeline [ecosystem]"
     severity: medium
     category: security
-    description: "Connect REST must require auth, every connector must declare its topic set (so audit can attribute writes to a connector), and a SIEM shipper or audit logger must be present"
+    description: "Connect REST must require auth, the connector list must be readable with supplied credentials, and every connector must declare its topic set so audit can attribute writes to a connector"
     requires: [connect]
-    condition: "connect.reachable && connect.requires_auth && (size(connect.connectors) == 0 || connect.any_connector_topic_listed)"
-    message: "Connect REST is anonymous, or at least one connector does not list its topics — audit cannot attribute writes"
+    condition: "connect.reachable && connect.requires_auth && connect.connectors_enumerated && (size(connect.connectors) == 0 || connect.all_connector_topics_listed)"
+    message: "Connect REST is anonymous, unauthorized, or at least one connector does not list its topics — audit cannot attribute writes"
     remediation: "Enable Connect REST auth (basic.auth.user.info / oauth2); ensure every connector config sets `topics` or `topics.regex`"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
@@ -852,11 +852,11 @@ controls:
     title: "Schema authorization (anonymous-write probe)"
     severity: high
     category: security
-    description: "Anonymous POST to /subjects/{name}/versions must be rejected (401/403) on every subject; the registry must require auth on writes."
+    description: "When explicitly enabled, anonymous POST to /subjects/{name}/versions must be rejected (401/403) on every subject; active write probes are disabled by default."
     requires: [schemaregistry]
-    condition: "schemaregistry.reachable && !schemaregistry.write_anonymous_allowed && schemaregistry.all_subjects_require_auth"
-    message: "Anonymous write to Schema Registry is allowed for at least one subject — anyone can register or evolve schemas"
-    remediation: "Front the registry with kafka-schema-registry-security-plugin (or RBAC) and demand auth on POST /subjects/{}/versions"
+    condition: "schemaregistry.reachable && schemaregistry.write_probe_performed && !schemaregistry.write_anonymous_allowed && schemaregistry.all_subjects_require_auth"
+    message: "Schema Registry write authorization is unproven, or anonymous write is allowed for at least one subject"
+    remediation: "Run with --allow-active-probes in a controlled environment or provide equivalent write-auth evidence; demand auth on POST /subjects/{}/versions"
     compliance: {pci_dss: ["7.1"], nist: ["AC-3", "AC-6"], cwe: ["862", "863"]}
 
   - id: KAFKA-SR-003
@@ -1126,7 +1126,7 @@ controls:
     category: operational
     description: "Every Connect connector must declare errors.deadletterqueue.topic.name; absent if no connectors exist"
     requires: [connect]
-    condition: "connect.reachable && (size(connect.connectors) == 0 || connect.connector_configs.all(c, c.errors_dlq_topic != ''))"
+    condition: "connect.reachable && connect.connectors_enumerated && (size(connect.connectors) == 0 || connect.connector_configs.all(c, c.errors_dlq_topic != ''))"
     message: "At least one connector has no errors.deadletterqueue.topic.name set — failed records vanish silently"
     remediation: "Set errors.tolerance=all and errors.deadletterqueue.topic.name=<connector-dlq> on every connector"
     compliance: {pci_dss: ["10.4"], nist: ["SI-11", "AU-6"]}

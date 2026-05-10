@@ -44,12 +44,20 @@ public final class ScanModels {
     public record Compliance(
         @JsonProperty("pci_dss") List<String> pciDss,
         List<String> soc2,
-        List<String> iso27001
+        List<String> iso27001,
+        List<String> nist,
+        List<String> cwe
     ) {
+        public Compliance(List<String> pciDss, List<String> soc2, List<String> iso27001) {
+            this(pciDss, soc2, iso27001, List.of(), List.of());
+        }
+
         public Compliance {
             pciDss = pciDss == null ? List.of() : List.copyOf(pciDss);
             soc2 = soc2 == null ? List.of() : List.copyOf(soc2);
             iso27001 = iso27001 == null ? List.of() : List.copyOf(iso27001);
+            nist = nist == null ? List.of() : List.copyOf(nist);
+            cwe = cwe == null ? List.of() : List.copyOf(cwe);
         }
     }
 
@@ -85,6 +93,7 @@ public final class ScanModels {
         @JsonProperty("pass_rate") double passRate,
         @JsonProperty("collectors_used") List<String> collectorsUsed,
         @JsonProperty("collectors_unavailable") List<String> collectorsUnavailable,
+        @JsonProperty("control_results") List<Finding> controlResults,
         List<Finding> findings,
         ClusterInfo cluster
     ) {
@@ -92,6 +101,7 @@ public final class ScanModels {
             collectorsUsed = collectorsUsed == null ? List.of() : List.copyOf(collectorsUsed);
             collectorsUnavailable = collectorsUnavailable == null
                 ? List.of() : List.copyOf(collectorsUnavailable);
+            controlResults = controlResults == null ? List.of() : List.copyOf(controlResults);
             findings = findings == null ? List.of() : List.copyOf(findings);
         }
     }

@@ -33,6 +33,9 @@ public final class SchemaRegistryCollector implements Collector {
         var out = new HashMap<String, Object>(rootResp);
 
         var subjects = rootResp.get("body");
+        boolean subjectsEnumerated = subjects instanceof List<?>;
+        out.put("subjects_enumerated", subjectsEnumerated);
+        out.put("subject_count_unknown", !subjectsEnumerated);
         if (subjects instanceof List<?> list) {
             out.put("subject_count", (long) list.size());
         } else {
@@ -62,6 +65,11 @@ public final class SchemaRegistryCollector implements Collector {
         boolean anyTokenized = false;
         boolean anyOwner = false;
         boolean writeAnonAllowed = false;
+        boolean writeProbePerformed = context.activeProbesAllowed();
+        out.put("write_probe_performed", writeProbePerformed);
+        out.put("write_probe_mode", writeProbePerformed
+            ? "active_opt_in"
+            : "disabled_non_mutating_default");
         var subjectNames = new ArrayList<String>();
         if (subjects instanceof List<?> list) {
             for (var s : list) {
@@ -70,47 +78,47 @@ public final class SchemaRegistryCollector implements Collector {
                 }
             }
         }
-        boolean allSubjectsRequireAuth = !subjectNames.isEmpty();
+        boolean allSubjectsRequireAuth = subjectsEnumerated && !subjectNames.isEmpty();
         for (var name : subjectNames) {
-                var verResp = HttpProbe.get(base + "/subjects/" + urlEncode(name) + "/versions/latest",
-                    context.timeout());
-                var verBody = verResp.get("body");
-                var entry = new HashMap<String, Object>();
-                entry.put("name", name);
-                if (verBody instanceof Map<?, ?> vm) {
-                    var schema = String.valueOf(vm.get("schema"));
-                    var schemaType = vm.get("schemaType") == null
-                        ? "AVRO" : String.valueOf(vm.get("schemaType"));
-                    entry.put("schema_type", schemaType);
-                    entry.put("schema_size", (long) schema.length());
-                    boolean enc = containsAny(schema, "@encrypt", "x-encryption", "\"encrypted\":true",
-                        "\"encrypt\":true", "confluent:tags", "PII", "pii");
-                    boolean tok = containsAny(schema, "@tokenize", "@tokenized", "x-tokenization",
-                        "\"tokenized\":true", "\"tokenize\":true");
-                    boolean own = containsAny(schema, "\"owner\"", "x-owner", "@owner", "doc-owner");
-                    entry.put("annotation_encrypt", enc);
-                    entry.put("annotation_tokenized", tok);
-                    entry.put("annotation_owner", own);
-                    if (enc) {
-                        anyEncrypt = true;
-                    }
-                    if (tok) {
-                        anyTokenized = true;
-                    }
-                    if (own) {
-                        anyOwner = true;
-                    }
-                } else {
-                    entry.put("schema_type", "UNKNOWN");
-                    entry.put("annotation_encrypt", false);
-                    entry.put("annotation_tokenized", false);
-                    entry.put("annotation_owner", false);
+            var verResp = HttpProbe.get(base + "/subjects/" + urlEncode(name) + "/versions/latest",
+                context.timeout());
+            var verBody = verResp.get("body");
+            var entry = new HashMap<String, Object>();
+            entry.put("name", name);
+            if (verBody instanceof Map<?, ?> vm) {
+                var schema = String.valueOf(vm.get("schema"));
+                var schemaType = vm.get("schemaType") == null
+                    ? "AVRO" : String.valueOf(vm.get("schemaType"));
+                entry.put("schema_type", schemaType);
+                entry.put("schema_size", (long) schema.length());
+                boolean enc = containsAny(schema, "@encrypt", "x-encryption", "\"encrypted\":true",
+                    "\"encrypt\":true", "confluent:tags", "PII", "pii");
+                boolean tok = containsAny(schema, "@tokenize", "@tokenized", "x-tokenization",
+                    "\"tokenized\":true", "\"tokenize\":true");
+                boolean own = containsAny(schema, "\"owner\"", "x-owner", "@owner", "doc-owner");
+                entry.put("annotation_encrypt", enc);
+                entry.put("annotation_tokenized", tok);
+                entry.put("annotation_owner", own);
+                if (enc) {
+                    anyEncrypt = true;
                 }
+                if (tok) {
+                    anyTokenized = true;
+                }
+                if (own) {
+                    anyOwner = true;
+                }
+            } else {
+                entry.put("schema_type", "UNKNOWN");
+                entry.put("annotation_encrypt", false);
+                entry.put("annotation_tokenized", false);
+                entry.put("annotation_owner", false);
+            }
 
-                // Anonymous-write probe: POST without creds. Status 401/403
-                // is the ONLY safe outcome (auth required); 2xx, 4xx-other,
-                // 5xx and conflicts (409/422) all prove the registry
-                // entertained the request without credentials.
+            if (writeProbePerformed) {
+                // Active probe: POST without creds. Status 401/403 is the
+                // only safe outcome. Disabled by default because a permissive
+                // registry can register the schema version.
                 var writeProbe = HttpProbe.post(
                     base + "/subjects/" + urlEncode(name) + "/versions",
                     "{\"schema\":\"\\\"int\\\"\"}",
@@ -128,8 +136,15 @@ public final class SchemaRegistryCollector implements Collector {
                 if (!reqAuth) {
                     allSubjectsRequireAuth = false;
                 }
+            } else {
+                entry.put("write_anonymous_allowed", false);
+                entry.put("write_requires_auth", false);
+                entry.put("write_status", "not_probed");
+                entry.put("write_probe_skipped_reason", "active probes disabled");
+                allSubjectsRequireAuth = false;
+            }
 
-                subjectDetails.add(entry);
+            subjectDetails.add(entry);
         }
         out.put("subject_details", subjectDetails);
         out.put("any_subject_with_encrypt_annotation", anyEncrypt);

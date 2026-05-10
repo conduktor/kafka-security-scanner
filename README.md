@@ -76,7 +76,7 @@ Collectors run concurrently on virtual threads — adding a slow probe doesn't b
 | Collector         | Flag(s)                                                                | What it sees                                                                              |
 |-------------------|------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
 | `connect`         | `--connect-url http://host:8083`                                       | Per-connector config: transforms, MM2 security, DLQ, REST auth posture                   |
-| `schemaregistry`  | `--schema-registry-url http://host:8081`                               | Per-subject schema (annotations: `@encrypt` / `@tokenized` / `@owner`), anonymous-write probe |
+| `schemaregistry`  | `--schema-registry-url http://host:8081`                               | Per-subject schema (annotations: `@encrypt` / `@tokenized` / `@owner`); write-auth probes require `--allow-active-probes` |
 | `restproxy`       | `--rest-proxy-url http://host:8082`                                    | REST Proxy auth posture                                                                  |
 | `alerts`          | `--prometheus-url http://prom:9090`                                    | Prometheus rule scan: auth-failure / ACL-change / quota-breach / anomaly / consumer-lag  |
 | `siem`            | `--collectors=...,siem`                                                | Local process + 127.0.0.1 port probe for vector / fluentd / filebeat / splunkforwarder   |
@@ -168,6 +168,21 @@ kafka-security-scanner \
   --policy enterprise
 ```
 
+For production clusters, prefer a real Kafka client properties file when you
+need truststores, keystores, mTLS, OAuth callback handlers, or custom client
+settings:
+
+```bash
+kafka-security-scanner \
+  --bootstrap broker:9093 \
+  --kafka-client-config ./client.properties \
+  --policy enterprise
+```
+
+The scanner is non-mutating by default. Probes that may write to a target
+system, such as Schema Registry anonymous-write verification, only run when
+`--allow-active-probes` is passed in a controlled environment.
+
 **Confluent Cloud:**
 
 ```bash
@@ -227,6 +242,11 @@ Exit codes are picked for CI gates:
 | `pdf`      | Sign-off document with cover page and signatures |
 
 Pass any combination via `--format`.
+
+JSON, HTML, and CSV reports include `control_results` for every control, not
+only failures. Each result includes redacted evidence, collector availability,
+the evaluated condition, flavor coverage proof when relevant, and compliance
+mappings.
 
 ## Policies
 

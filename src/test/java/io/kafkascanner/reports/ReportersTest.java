@@ -9,6 +9,7 @@ import io.kafkascanner.model.ScanModels.ClusterInfo;
 import io.kafkascanner.model.ScanModels.Compliance;
 import io.kafkascanner.model.ScanModels.Finding;
 import io.kafkascanner.model.ScanModels.ScanResult;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +30,20 @@ class ReportersTest {
         try (var pdf = Loader.loadPDF(written.getFirst().toFile())) {
             assertThat(pdf.getNumberOfPages()).isGreaterThan(2);
         }
+    }
+
+    @Test
+    void csvIncludesAllControlResultsEvidenceAndCompliance(@TempDir Path tmp) throws Exception {
+        var result = resultWithControlResults();
+
+        var written = Reporters.write(result, "csv", tmp);
+        var csv = Files.readString(written.getFirst());
+
+        assertThat(csv).contains("PASS-001");
+        assertThat(csv).contains("FAIL-001");
+        assertThat(csv).contains("nist");
+        assertThat(csv).contains("AU-2");
+        assertThat(csv).contains("reason");
     }
 
     private static ScanResult resultWithFindings(int count) {
@@ -59,6 +74,46 @@ class ReportersTest {
             List.of("adminclient"),
             List.of(),
             findings,
+            findings,
+            new ClusterInfo("cluster", 3, 12, 0, "kraft", "vanilla", "default"));
+    }
+
+    private static ScanResult resultWithControlResults() {
+        var passFinding = new Finding(
+            "PASS-001",
+            high,
+            security,
+            io.kafkascanner.model.ScanModels.Status.pass,
+            "Pass title",
+            "passed",
+            "none",
+            Map.of("reason", "condition evaluated true"),
+            new Compliance(List.of("10.2"), List.of(), List.of(), List.of("AU-2"), List.of("778")));
+        var failFinding = new Finding(
+            "FAIL-001",
+            high,
+            security,
+            fail,
+            "Fail title",
+            "failed",
+            "fix",
+            Map.of("reason", "condition evaluated false"),
+            new Compliance(List.of(), List.of(), List.of(), List.of(), List.of()));
+        return new ScanResult(
+            "cluster",
+            "test",
+            "2026-05-10T00:00:00Z",
+            90,
+            1,
+            1,
+            0,
+            0,
+            0,
+            50.0,
+            List.of("adminclient"),
+            List.of(),
+            List.of(passFinding, failFinding),
+            List.of(failFinding),
             new ClusterInfo("cluster", 3, 12, 0, "kraft", "vanilla", "default"));
     }
 }

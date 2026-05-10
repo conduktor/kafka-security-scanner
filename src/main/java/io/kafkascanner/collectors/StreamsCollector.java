@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.management.JMException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
@@ -134,22 +135,22 @@ public final class StreamsCollector implements Collector {
                     if (appId != null) {
                         out.put("application_id", appId.toString());
                     }
-                } catch (Exception ignore) {
-                    // attribute may not exist on all kafka-streams versions
+                } catch (JMException | IOException e) {
+                    out.put("application_id_error", e.getClass().getSimpleName());
                 }
                 try {
                     var state = mbsc.getAttribute(name, "state");
                     if (state != null) {
                         out.put("state", state.toString());
                     }
-                } catch (Exception ignore) {
-                    // attribute may not exist on all kafka-streams versions
+                } catch (JMException | IOException e) {
+                    out.put("state_error", e.getClass().getSimpleName());
                 }
                 if (out.containsKey("application_id")) {
                     break;
                 }
             }
-        } catch (Exception e) {
+        } catch (JMException | IOException e) {
             out.put("error", e.getMessage());
         }
         return out;
@@ -173,8 +174,12 @@ public final class StreamsCollector implements Collector {
         paths.add(path);
         try (var stream = Files.list(path)) {
             stream.filter(Files::isDirectory).forEach(paths::add);
-        } catch (IOException ignore) {
-            // best-effort listing
+        } catch (IOException e) {
+            proof.add(Map.of(
+                "path", (Object) path.toString(),
+                "secure", (Object) false,
+                "reason", (Object) ("list_failed: " + e.getMessage())
+            ));
         }
         boolean allSecure = true;
         for (var p : paths) {

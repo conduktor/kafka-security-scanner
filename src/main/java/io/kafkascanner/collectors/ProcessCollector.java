@@ -127,12 +127,8 @@ public final class ProcessCollector implements Collector {
     }
 
     private static boolean isKafkaProcess(Path procDir) {
-        try {
-            var cmdline = readNullSeparated(procDir.resolve("cmdline"));
-            return cmdline.contains("kafka.Kafka") || cmdline.contains("KafkaServer");
-        } catch (Exception e) {
-            return false;
-        }
+        var cmdline = readNullSeparated(procDir.resolve("cmdline"));
+        return cmdline.contains("kafka.Kafka") || cmdline.contains("KafkaServer");
     }
 
     private static java.util.List<String> extractJvmFlags(String cmdline) {

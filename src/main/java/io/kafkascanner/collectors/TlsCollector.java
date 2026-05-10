@@ -103,6 +103,8 @@ public final class TlsCollector implements Collector {
                 tls.put("handshake_ok", true);
                 tls.put("protocol", session.getProtocol());
                 tls.put("cipher_suite", session.getCipherSuite());
+                tls.put("chain_trusted_by_default_ca",
+                    defaultTrustHandshake(host, port, HANDSHAKE_TIMEOUT_MS));
 
                 var peerCerts = session.getPeerCertificates();
                 var chain = new ArrayList<Map<String, Object>>();
@@ -303,6 +305,27 @@ public final class TlsCollector implements Collector {
             return value.substring(1, value.length() - 1);
         }
         return value;
+    }
+
+    private static boolean defaultTrustHandshake(String host, int port, int timeoutMs) {
+        try {
+            var ctx = SSLContext.getDefault();
+            try (var rawSocket = ctx.getSocketFactory().createSocket()) {
+                if (!(rawSocket instanceof SSLSocket socket)) {
+                    return false;
+                }
+                socket.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
+                if (!isIpLiteral(host)) {
+                    var params = new SSLParameters();
+                    params.setServerNames(java.util.List.of(new SNIHostName(host)));
+                    socket.setSSLParameters(params);
+                }
+                socket.startHandshake();
+                return true;
+            }
+        } catch (IOException | java.security.GeneralSecurityException e) {
+            return false;
+        }
     }
 
     /**

@@ -1,6 +1,8 @@
 package io.kafkascanner.collectors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -69,10 +71,14 @@ final class HttpProbe {
             try {
                 var parsed = JSON.readValue(body, Object.class);
                 out.put("body", parsed);
-            } catch (Exception ignore) {
+            } catch (JsonProcessingException e) {
                 out.put("body_text", body.length() > 4096 ? body.substring(0, 4096) : body);
+                out.put("body_parse_error", e.getOriginalMessage());
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
+            out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         return out;

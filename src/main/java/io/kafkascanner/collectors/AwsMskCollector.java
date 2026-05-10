@@ -301,7 +301,9 @@ public final class AwsMskCollector implements Collector {
                 .mapToLong(d -> d.maximum().longValue())
                 .max()
                 .orElse(-1L);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
+            System.err.println("[awsmsk] CloudWatch metric " + metric + " failed: "
+                + e.getMessage());
             return -1L;
         }
     }

@@ -172,6 +172,8 @@ public final class Reporters {
         sb.append(".sev-info{background:#8e8e93;color:#fff;}");
         sb.append(".rem{margin-top:8px;padding:8px 12px;background:#e8f4fd;border-left:3px solid #007aff;");
         sb.append("border-radius:4px;font-size:13px;}");
+        sb.append("pre{white-space:pre-wrap;background:#f5f5f7;border-radius:6px;padding:10px;");
+        sb.append("font-size:12px;line-height:1.4;overflow:auto;}");
         sb.append("</style></head><body><div class=\"container\">");
         sb.append("<h1>Kafka Security Scan Report</h1>");
         sb.append("<div class=\"meta\">Cluster: <b>").append(escape(result.cluster().name()))
@@ -199,19 +201,26 @@ public final class Reporters {
             .append(String.format(Locale.ROOT, "%.0f%%", result.passRate()))
             .append("</div><div class=\"l\">Pass Rate</div></div>");
         sb.append("</div>");
-        sb.append("<h2>Findings (").append(result.findings().size()).append(")</h2>");
-        var sorted = new ArrayList<>(result.findings());
+        var reportRows = resultsForAudit(result);
+        sb.append("<h2>Control Results (").append(reportRows.size()).append(")</h2>");
+        var sorted = new ArrayList<>(reportRows);
         sorted.sort((a, b) -> severityOrder(b.severity()) - severityOrder(a.severity()));
         for (var f : sorted) {
             sb.append("<details><summary>")
                 .append("<span class=\"sev sev-").append(f.severity().name()).append("\">")
                 .append(f.severity().name()).append("</span>")
-                .append("<b>").append(escape(f.controlId())).append("</b> — ")
+                .append("<b>").append(escape(f.controlId())).append("</b> ")
+                .append("[").append(escape(f.status().name())).append("] — ")
                 .append(escape(f.title())).append("</summary>");
             sb.append("<p>").append(escape(f.message())).append("</p>");
             if (f.remediation() != null && !f.remediation().isEmpty()) {
                 sb.append("<div class=\"rem\"><b>Remediation:</b> ")
                     .append(escape(f.remediation())).append("</div>");
+            }
+            if (f.evidence() != null && !f.evidence().isEmpty()) {
+                sb.append("<pre>")
+                    .append(escape(JSON.writeValueAsString(f.evidence())))
+                    .append("</pre>");
             }
             sb.append("</details>");
         }
@@ -224,8 +233,8 @@ public final class Reporters {
         var path = outDir.resolve("report.csv");
         var sb = new StringBuilder(1024);
         sb.append("control_id,severity,category,status,title,message,remediation,")
-            .append("pci_dss,soc2,iso27001\n");
-        for (var f : result.findings()) {
+            .append("pci_dss,soc2,iso27001,nist,cwe,evidence\n");
+        for (var f : resultsForAudit(result)) {
             sb.append(csv(f.controlId())).append(',')
                 .append(csv(f.severity().name())).append(',')
                 .append(csv(f.category().name())).append(',')
@@ -235,7 +244,10 @@ public final class Reporters {
                 .append(csv(f.remediation())).append(',')
                 .append(csv(joinList(f.compliance() == null ? null : f.compliance().pciDss()))).append(',')
                 .append(csv(joinList(f.compliance() == null ? null : f.compliance().soc2()))).append(',')
-                .append(csv(joinList(f.compliance() == null ? null : f.compliance().iso27001())))
+                .append(csv(joinList(f.compliance() == null ? null : f.compliance().iso27001()))).append(',')
+                .append(csv(joinList(f.compliance() == null ? null : f.compliance().nist()))).append(',')
+                .append(csv(joinList(f.compliance() == null ? null : f.compliance().cwe()))).append(',')
+                .append(csv(JSON.writeValueAsString(f.evidence())))
                 .append('\n');
         }
         Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
@@ -455,6 +467,10 @@ public final class Reporters {
         var sorted = new ArrayList<>(findings);
         sorted.sort((a, b) -> severityOrder(b.severity()) - severityOrder(a.severity()));
         return sorted;
+    }
+
+    private static List<Finding> resultsForAudit(ScanResult result) {
+        return result.controlResults().isEmpty() ? result.findings() : result.controlResults();
     }
 
     /** Backwards-compat helper used by tests/Main to produce a quick summary map. */

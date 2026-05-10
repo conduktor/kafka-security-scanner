@@ -45,13 +45,19 @@ public final class ConnectCollector implements Collector {
         var connectorsResp = HttpProbe.get(base + "/connectors", context.timeout());
         var connectorsBody = connectorsResp.get("body");
         var names = new ArrayList<String>();
+        boolean connectorsEnumerated = false;
         if (connectorsBody instanceof List<?> list) {
+            connectorsEnumerated = true;
             for (var item : list) {
                 if (item instanceof String s) {
                     names.add(s);
                 }
             }
         }
+        out.put("connectors_enumerated", connectorsEnumerated);
+        out.put("connector_count_unknown", !connectorsEnumerated);
+        out.put("connectors_status", connectorsResp.getOrDefault("status", -1));
+        out.put("connectors_requires_auth", connectorsResp.get("requires_auth"));
         out.put("connectors", names);
         out.put("connector_count", (long) names.size());
 
@@ -63,6 +69,7 @@ public final class ConnectCollector implements Collector {
         boolean anyMaskTransform = false;
         boolean anyDlq = false;
         boolean anyTopicAuditable = false;
+        boolean allTopicsAuditable = connectorsEnumerated;
         for (var name : names) {
             var cfgResp = HttpProbe.get(base + "/connectors/" + urlEncode(name) + "/config",
                 context.timeout());
@@ -119,6 +126,8 @@ public final class ConnectCollector implements Collector {
 
                 if (cfg.containsKey("topics") || cfg.containsKey("topics.regex")) {
                     anyTopicAuditable = true;
+                } else {
+                    allTopicsAuditable = false;
                 }
             } else {
                 entry.put("config", Map.of());
@@ -126,6 +135,7 @@ public final class ConnectCollector implements Collector {
                 entry.put("has_mask_transform", false);
                 entry.put("errors_tolerance", "");
                 entry.put("errors_dlq_topic", "");
+                allTopicsAuditable = false;
             }
             configs.add(entry);
         }
@@ -136,6 +146,7 @@ public final class ConnectCollector implements Collector {
         out.put("any_mask_transform", anyMaskTransform);
         out.put("any_dlq_topic_configured", anyDlq);
         out.put("any_connector_topic_listed", anyTopicAuditable);
+        out.put("all_connector_topics_listed", allTopicsAuditable);
 
         var pluginsResp = HttpProbe.get(base + "/connector-plugins", context.timeout());
         var plugins = pluginsResp.get("body");

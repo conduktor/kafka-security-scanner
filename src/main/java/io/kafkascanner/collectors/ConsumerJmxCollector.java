@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import javax.management.JMException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
@@ -92,12 +93,12 @@ public final class ConsumerJmxCollector implements Collector {
                     } else {
                         out.put(clientId, null);
                     }
-                } catch (Exception e) {
+                } catch (JMException | IOException e) {
                     out.put(clientId, null);
                 }
             }
-        } catch (Exception e) {
-            // ignore — empty map signals no lag mbeans
+        } catch (JMException | IOException e) {
+            System.err.println("[consumerjmx] lag mbean read failed: " + e.getMessage());
         }
         return out;
     }

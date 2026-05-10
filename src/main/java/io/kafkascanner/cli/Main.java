@@ -32,7 +32,7 @@ import picocli.CommandLine.Option;
     description = "Scan Apache Kafka clusters for security misconfigurations."
 )
 @SuppressWarnings({"NullAway", "UnusedVariable"})
-public final class Main implements Runnable {
+public final class Main implements java.util.concurrent.Callable<Integer> {
 
     private static final int EXIT_OK = 0;
     private static final int EXIT_FINDINGS = 1;
@@ -112,6 +112,14 @@ public final class Main implements Runnable {
     @Option(names = {"--schema-registry-url"}, defaultValue = "",
             description = "Schema Registry REST URL for the schemaregistry collector")
     private String schemaRegistryUrl;
+
+    @Option(names = {"--allow-active-probes"}, defaultValue = "false",
+            description = "Allow probes that may mutate the target system. Disabled by default.")
+    private boolean allowActiveProbes;
+
+    @Option(names = {"--kafka-client-config"}, defaultValue = "",
+            description = "Path to Kafka client properties. Loaded before simplified auth flags.")
+    private String kafkaClientConfig;
 
     @Option(names = {"--rest-proxy-url"}, defaultValue = "",
             description = "Kafka REST Proxy URL for the restproxy collector")
@@ -220,7 +228,7 @@ public final class Main implements Runnable {
     );
 
     @Override
-    public void run() {
+    public Integer call() {
         try {
             System.out.println("=== Kafka Security Scanner v1.0.0 ===");
             System.out.println("Bootstrap: " + bootstrap);
@@ -230,7 +238,7 @@ public final class Main implements Runnable {
             var policyFile = new File(policyPath);
             if (!policyFile.exists()) {
                 System.err.println("Policy file not found: " + policyPath);
-                System.exit(EXIT_ERROR);
+                return EXIT_ERROR;
             }
             System.out.println("Policy: " + policyFile.getName());
             var engine = PolicyEngine.load(policyFile);
@@ -239,6 +247,7 @@ public final class Main implements Runnable {
             System.out.println("Kafka flavor: " + detection.flavor() + "  (" + detection.source() + ")");
 
             var props = new Properties();
+            loadKafkaClientConfig(props);
             props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
             var timeoutMs = (int) Duration.ofSeconds(timeout).toMillis();
             props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, timeoutMs);
@@ -274,7 +283,7 @@ public final class Main implements Runnable {
                     .anyMatch(c -> "adminclient".equals(c.name()));
                 if (adminClientSelected && missingBrokerData(brokerData)) {
                     System.err.println("Scan error: no broker data collected (cluster unreachable?)");
-                    System.exit(EXIT_ERROR);
+                    return EXIT_ERROR;
                 }
 
                 System.out.println("Evaluating " + engine.policy().controls().size() + " controls...");
@@ -289,12 +298,12 @@ public final class Main implements Runnable {
                     System.out.println("Wrote: " + p);
                 }
 
-                System.exit(computeExit(result));
+                return computeExit(result);
             }
-        } catch (Exception e) {
+        } catch (java.io.IOException | RuntimeException e) {
             System.err.println("Scan failed: " + e.getMessage());
             e.printStackTrace();
-            System.exit(EXIT_ERROR);
+            return EXIT_ERROR;
         }
     }
 
@@ -335,7 +344,7 @@ public final class Main implements Runnable {
             optionOrEnv(gcpProject, "GCP_PROJECT"),
             blankToNull(streamsJmxHostPorts),
             blankToNull(streamsStateDir),
-            java.util.Map.copyOf(saslProps), kafkaFlavor
+            java.util.Map.copyOf(saslProps), kafkaFlavor, allowActiveProbes
         );
     }
 
@@ -497,9 +506,26 @@ public final class Main implements Runnable {
                 ? "org.apache.kafka.common.security.scram.ScramLoginModule"
                 : "org.apache.kafka.common.security.plain.PlainLoginModule";
             props.put("sasl.jaas.config",
-                module + " required username=\"" + saslUsername
-                    + "\" password=\"" + saslPassword + "\";");
+                module + " required username=\"" + jaasEscape(saslUsername)
+                    + "\" password=\"" + jaasEscape(saslPassword) + "\";");
         }
+    }
+
+    private void loadKafkaClientConfig(Properties props) throws java.io.IOException {
+        loadKafkaClientConfig(props, kafkaClientConfig);
+    }
+
+    static void loadKafkaClientConfig(Properties props, String path) throws java.io.IOException {
+        if (path.isBlank()) {
+            return;
+        }
+        try (var in = java.nio.file.Files.newInputStream(java.nio.file.Path.of(path))) {
+            props.load(in);
+        }
+    }
+
+    static String jaasEscape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private int computeExit(ScanResult result) {

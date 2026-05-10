@@ -104,8 +104,7 @@ spotbugs {
     toolVersion = '4.9.8'
     effort = 'max'
     reportLevel = 'low'
-    // Java 25 + preview bytecode (class major 69) isn't fully supported by SpotBugs/ASM yet.
-    ignoreFailures = true
+    ignoreFailures = false
 }
 
 // ── PMD ──

@@ -91,6 +91,6 @@ class CisCollectorTest {
             null, null, null, null,
             null, null, null,
             null, null,
-            Map.of(), "vanilla");
+            Map.of(), "vanilla", false);
     }
 }

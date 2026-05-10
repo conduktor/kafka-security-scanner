@@ -40,7 +40,8 @@ public record CollectorContext(
     @Nullable String streamsJmxHostPorts,
     @Nullable String streamsStateDir,
     Map<String, String> saslProps,
-    String kafkaFlavor
+    String kafkaFlavor,
+    boolean activeProbesAllowed
 ) {
     public CollectorContext {
         saslProps = saslProps == null ? Map.of() : Map.copyOf(saslProps);

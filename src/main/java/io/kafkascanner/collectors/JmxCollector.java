@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import javax.management.JMException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
@@ -178,7 +179,7 @@ public final class JmxCollector implements Collector {
         try {
             var raw = mbsc.getAttribute(new ObjectName(beanName), attr);
             return raw instanceof Number n ? n.longValue() : null;
-        } catch (Exception e) {
+        } catch (JMException | IOException e) {
             return null;
         }
     }
@@ -191,7 +192,7 @@ public final class JmxCollector implements Collector {
         try {
             var raw = mbsc.getAttribute(new ObjectName(beanName), attr);
             return raw instanceof Number n ? n.doubleValue() : null;
-        } catch (Exception e) {
+        } catch (JMException | IOException e) {
             return null;
         }
     }
@@ -200,7 +201,7 @@ public final class JmxCollector implements Collector {
         try {
             var raw = mbsc.getAttribute(new ObjectName(beanName), attr);
             return raw == null ? null : raw.toString();
-        } catch (Exception e) {
+        } catch (JMException | IOException e) {
             return null;
         }
     }
@@ -215,7 +216,7 @@ public final class JmxCollector implements Collector {
                     return used / max * 100.0;
                 }
             }
-        } catch (Exception e) {
+        } catch (JMException | IOException | ClassCastException e) {
             // fall through
         }
         return null;
@@ -229,7 +230,7 @@ public final class JmxCollector implements Collector {
             if (max > 0) {
                 return open / max * 100.0;
             }
-        } catch (Exception e) {
+        } catch (JMException | IOException | ClassCastException e) {
             // fall through
         }
         return null;

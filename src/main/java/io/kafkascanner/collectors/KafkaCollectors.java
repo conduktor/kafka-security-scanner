@@ -8,8 +8,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
@@ -24,8 +26,7 @@ public final class KafkaCollectors {
 
     /** Collect all data using virtual threads for parallelism. */
     @SuppressWarnings("unchecked")
-    public static Map<String, Object> collectAll(AdminClient admin, int maxWorkers, int timeoutSeconds)
-            throws Exception {
+    public static Map<String, Object> collectAll(AdminClient admin, int maxWorkers, int timeoutSeconds) {
         var data = new ConcurrentHashMap<String, Object>();
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = List.of(
@@ -49,7 +50,10 @@ public final class KafkaCollectors {
             for (var f : futures) {
                 try {
                     f.get(timeoutSeconds, TimeUnit.SECONDS);
-                } catch (Exception e) {
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    System.err.println("Collector interrupted: " + e.getMessage());
+                } catch (ExecutionException | TimeoutException e) {
                     System.err.println("Collector failed: " + e.getMessage());
                 }
             }
@@ -57,12 +61,13 @@ public final class KafkaCollectors {
         return data;
     }
 
-    public static Map<String, Object> collectAll(AdminClient admin, int maxWorkers) throws Exception {
+    public static Map<String, Object> collectAll(AdminClient admin, int maxWorkers) {
         return collectAll(admin, maxWorkers, 30);
     }
 
     @SuppressWarnings("StringSplitter")
-    static List<Map<String, Object>> collectBrokers(AdminClient admin, int timeoutSeconds) throws Exception {
+    static List<Map<String, Object>> collectBrokers(AdminClient admin, int timeoutSeconds)
+        throws InterruptedException, ExecutionException, TimeoutException {
         var cluster = admin.describeCluster();
         var nodes = cluster.nodes().get(timeoutSeconds, TimeUnit.SECONDS);
         var controller = cluster.controller().get(timeoutSeconds, TimeUnit.SECONDS);
@@ -154,7 +159,8 @@ public final class KafkaCollectors {
         return result;
     }
 
-    static List<Map<String, Object>> collectTopics(AdminClient admin, int timeoutSeconds) throws Exception {
+    static List<Map<String, Object>> collectTopics(AdminClient admin, int timeoutSeconds)
+        throws InterruptedException, ExecutionException, TimeoutException {
         // listInternal(true) so KAFKA-ACL-012 (every internal topic protected) and
         // similar coverage checks see _consumer_offsets, __transaction_state, etc.
         var topics = admin.listTopics(new ListTopicsOptions().listInternal(true))
@@ -169,7 +175,10 @@ public final class KafkaCollectors {
         try {
             topicConfigs = admin.describeConfigs(configResources)
                 .all().get(timeoutSeconds, TimeUnit.SECONDS);
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
+        } catch (ExecutionException | TimeoutException e) {
             topicConfigs = Map.of();
         }
 
@@ -221,7 +230,8 @@ public final class KafkaCollectors {
         return result;
     }
 
-    static List<Map<String, Object>> collectQuotas(AdminClient admin, int timeoutSeconds) throws Exception {
+    static List<Map<String, Object>> collectQuotas(AdminClient admin, int timeoutSeconds)
+        throws InterruptedException, ExecutionException, TimeoutException {
         var result = admin.describeClientQuotas(ClientQuotaFilter.all())
             .entities().get(timeoutSeconds, TimeUnit.SECONDS);
         var out = new ArrayList<Map<String, Object>>();
@@ -253,7 +263,8 @@ public final class KafkaCollectors {
         return out;
     }
 
-    static List<Map<String, Object>> collectAcls(AdminClient admin, int timeoutSeconds) throws Exception {
+    static List<Map<String, Object>> collectAcls(AdminClient admin, int timeoutSeconds)
+        throws InterruptedException, ExecutionException, TimeoutException {
         var acls = admin.describeAcls(AclBindingFilter.ANY).values().get(timeoutSeconds, TimeUnit.SECONDS);
         return acls.stream().map(acl -> {
             var m = new HashMap<String, Object>();
@@ -280,7 +291,8 @@ public final class KafkaCollectors {
         }
     }
 
-    static Map<String, Object> collectCluster(AdminClient admin, int timeoutSeconds) throws Exception {
+    static Map<String, Object> collectCluster(AdminClient admin, int timeoutSeconds)
+        throws InterruptedException, ExecutionException, TimeoutException {
         var cluster = admin.describeCluster();
         var nodes = cluster.nodes().get(timeoutSeconds, TimeUnit.SECONDS);
         var controller = cluster.controller().get(timeoutSeconds, TimeUnit.SECONDS);
@@ -308,8 +320,12 @@ public final class KafkaCollectors {
                         mode = "zookeeper";
                     }
                 }
-            } catch (Exception ignored) {
-                // mode stays "unknown"; ZK-bound conditions explicitly handle this.
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (ExecutionException | TimeoutException e) {
+                System.err.println("[adminclient] cluster mode collect failed: "
+                    + e.getMessage());
             }
         }
 
@@ -318,8 +334,12 @@ public final class KafkaCollectors {
                 var quorum = admin.describeMetadataQuorum()
                     .quorumInfo().get(timeoutSeconds, TimeUnit.SECONDS);
                 voterCount = quorum.voters().size();
-            } catch (Exception ignored) {
-                // describeMetadataQuorum needs Kafka 3.4+. Fallback below.
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (ExecutionException | TimeoutException e) {
+                System.err.println("[adminclient] metadata quorum collect failed: "
+                    + e.getMessage());
             }
         }
         if (voterCount < 0) {

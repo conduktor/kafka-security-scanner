@@ -19,12 +19,14 @@ import dev.cel.parser.CelStandardMacro;
 import dev.cel.runtime.CelRuntime;
 import dev.cel.runtime.CelRuntimeFactory;
 import java.io.File;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Loads policy YAML and evaluates CEL conditions against the collected snapshot.
@@ -62,6 +64,38 @@ public final class PolicyEngine {
         "quota_meta", "quota",
         "cluster", "kraft"
     );
+    private static final Map<String, String> POLICY_VAR_TO_DATA_KEY = Map.ofEntries(
+        Map.entry("brokers", "broker"),
+        Map.entry("topics", "topic"),
+        Map.entry("topic_meta", "topic_metadata"),
+        Map.entry("acls", "acl"),
+        Map.entry("acl_meta", "acl_metadata"),
+        Map.entry("quotas", "quota"),
+        Map.entry("quota_meta", "quota_metadata"),
+        Map.entry("cluster", "kraft"),
+        Map.entry("jmx", "jmx"),
+        Map.entry("fs", "fs"),
+        Map.entry("tls", "tls"),
+        Map.entry("process", "process"),
+        Map.entry("connect", "connect"),
+        Map.entry("schemaregistry", "schemaregistry"),
+        Map.entry("restproxy", "restproxy"),
+        Map.entry("docs", "docs"),
+        Map.entry("alerts", "alerts"),
+        Map.entry("siem", "siem"),
+        Map.entry("zk", "zk"),
+        Map.entry("consumer_jmx", "consumer_jmx"),
+        Map.entry("kms", "kms"),
+        Map.entry("cc", "cc"),
+        Map.entry("aws", "aws"),
+        Map.entry("cis", "cis"),
+        Map.entry("aiven", "aiven"),
+        Map.entry("rpcloud", "rpcloud"),
+        Map.entry("azure", "azure"),
+        Map.entry("k8s", "k8s"),
+        Map.entry("gcp", "gcp"),
+        Map.entry("streams", "streams")
+    );
 
     private final Policy policy;
     private final CelCompiler compiler;
@@ -73,7 +107,7 @@ public final class PolicyEngine {
         this.runtime = runtime;
     }
 
-    public static PolicyEngine load(File policyFile) throws Exception {
+    public static PolicyEngine load(File policyFile) throws IOException {
         var policy = YAML.readValue(policyFile, Policy.class);
         validate(policy);
 
@@ -191,6 +225,7 @@ public final class PolicyEngine {
         }
 
         List<Finding> findings = new ArrayList<>();
+        List<Finding> controlResults = new ArrayList<>();
         int passCount = 0;
         int failCount = 0;
         int naCount = 0;
@@ -200,8 +235,12 @@ public final class PolicyEngine {
         var collectorsUnavailable = new java.util.LinkedHashSet<String>();
 
         for (var control : policy.controls()) {
-            var status = resolve(control, collectedData, activation, kafkaFlavor, availableCollectors,
+            var resolution = resolve(control, collectedData, activation, kafkaFlavor,
+                kafkaFlavorSource, availableCollectors,
                 collectorsUnavailable);
+            var status = resolution.status();
+            var controlResult = buildFinding(control, status, resolution.evidence());
+            controlResults.add(controlResult);
 
             switch (status) {
                 case pass -> passCount++;
@@ -212,18 +251,15 @@ public final class PolicyEngine {
                 case fail -> {
                     failCount++;
                     score = Math.max(0, score - weightFor(control));
-                    findings.add(buildFinding(control, Status.fail, kafkaFlavor,
-                        "control failed evaluation"));
+                    findings.add(controlResult);
                 }
                 case na -> {
                     naCount++;
-                    findings.add(buildFinding(control, Status.na, kafkaFlavor,
-                        "required collector not available"));
+                    findings.add(controlResult);
                 }
                 case error -> {
                     errorCount++;
-                    findings.add(buildFinding(control, Status.error, kafkaFlavor,
-                        "evaluation error"));
+                    findings.add(controlResult);
                 }
                 default -> { /* unreachable */ }
             }
@@ -253,23 +289,34 @@ public final class PolicyEngine {
             kafkaFlavorCoveredCount, errorCount,
             passRate,
             new ArrayList<>(availableCollectors), new ArrayList<>(collectorsUnavailable),
+            controlResults,
             findings,
             new ClusterInfo(clusterName, brokerCount, topicCount, 0, clusterMode,
                 kafkaFlavor, kafkaFlavorSource)
         );
     }
 
-    private Status resolve(
+    private record Resolution(Status status, Map<String, Object> evidence) { }
+
+    private Resolution resolve(
         Control control,
         Map<String, Object> collectedData,
         Map<String, Object> activation,
         String kafkaFlavor,
+        String kafkaFlavorSource,
         Set<String> availableCollectors,
         Set<String> collectorsUnavailable
     ) {
+        var evidence = baseEvidence(control, kafkaFlavor, kafkaFlavorSource, availableCollectors);
         var coveredBy = control.coveredByKafkaFlavor();
         if (coveredBy != null && coveredBy.contains(kafkaFlavor)) {
-            return Status.covered_by_flavor;
+            var coverage = flavorCoverageEvidence(kafkaFlavor, kafkaFlavorSource, collectedData);
+            evidence.put("flavor_coverage", coverage);
+            if (Boolean.TRUE.equals(coverage.get("verified"))) {
+                evidence.put("reason", "managed service coverage verified");
+                return new Resolution(Status.covered_by_flavor, evidence);
+            }
+            evidence.put("reason", "managed service coverage is not verified by collector evidence");
         }
 
         var requires = control.requires();
@@ -277,7 +324,9 @@ public final class PolicyEngine {
             for (var req : requires) {
                 if (!availableCollectors.contains(req)) {
                     collectorsUnavailable.add(req);
-                    return Status.na;
+                    evidence.put("reason", "required collector not available");
+                    evidence.put("missing_collectors", List.of(req));
+                    return new Resolution(Status.na, evidence);
                 }
             }
         }
@@ -300,7 +349,10 @@ public final class PolicyEngine {
                 for (var req : modeRequires) {
                     if (!availableCollectors.contains(req)) {
                         collectorsUnavailable.add(req);
-                        return Status.na;
+                        evidence.put("reason", "mode-required collector not available");
+                        evidence.put("cluster_mode", mode);
+                        evidence.put("missing_collectors", List.of(req));
+                        return new Resolution(Status.na, evidence);
                     }
                 }
             }
@@ -308,51 +360,121 @@ public final class PolicyEngine {
 
         var condition = control.condition();
         if (condition == null || condition.isBlank()) {
-            return Status.error;
+            evidence.put("reason", "condition missing");
+            return new Resolution(Status.error, evidence);
         }
         dev.cel.common.CelAbstractSyntaxTree ast;
         try {
             ast = compiler.compile(condition).getAst();
         } catch (Exception e) {
             System.err.printf("CEL compile failed %s: %s%n", control.id(), e.getMessage());
-            return Status.error;
+            evidence.put("reason", "condition compile error");
+            evidence.put("error", e.getMessage());
+            return new Resolution(Status.error, evidence);
         }
+
+        var policyRefs = policyReferences(ast.getExpr());
+        evidence.put("referenced_vars", new ArrayList<>(policyRefs));
+        evidence.put("observed", observedForReferences(policyRefs, activation));
 
         var adminClientRefs = adminClientReferences(ast.getExpr());
         if (!adminClientRefs.isEmpty()) {
             if (!availableCollectors.contains("adminclient")) {
                 collectorsUnavailable.add("adminclient");
-                return Status.na;
+                evidence.put("reason", "required collector not available");
+                evidence.put("missing_collectors", List.of("adminclient"));
+                return new Resolution(Status.na, evidence);
             }
             var missingSlices = missingAdminClientSlices(adminClientRefs, collectedData);
             if (!missingSlices.isEmpty()) {
                 collectorsUnavailable.addAll(missingSlices);
-                return Status.na;
+                evidence.put("reason", "required adminclient data slice not collected");
+                evidence.put("missing_data_slices", new ArrayList<>(missingSlices));
+                return new Resolution(Status.na, evidence);
             }
         }
 
         try {
             var program = runtime.createProgram(ast);
             var result = program.eval(activation);
-            return Boolean.TRUE.equals(result) ? Status.pass : Status.fail;
+            var passed = Boolean.TRUE.equals(result);
+            evidence.put("reason", passed ? "condition evaluated true" : "condition evaluated false");
+            evidence.put("evaluation_result", result);
+            return new Resolution(passed ? Status.pass : Status.fail, evidence);
         } catch (Exception e) {
             System.err.printf("CEL eval failed %s: %s%n", control.id(), e.getMessage());
-            return Status.error;
+            evidence.put("reason", "condition evaluation error");
+            evidence.put("error", e.getMessage());
+            return new Resolution(Status.error, evidence);
         }
     }
 
     private static Finding buildFinding(
-        Control control, Status status, String kafkaFlavor, String reason
+        Control control, Status status, Map<String, Object> evidence
     ) {
-        var evidence = new HashMap<String, Object>();
-        evidence.put("control_id", control.id());
-        evidence.put("kafka_flavor", kafkaFlavor);
-        evidence.put("reason", reason);
         return new Finding(
             control.id(), control.severity(), control.category(), status,
             control.title(), control.message(), control.remediation(),
             evidence, control.compliance()
         );
+    }
+
+    private static Map<String, Object> baseEvidence(
+        Control control,
+        String kafkaFlavor,
+        String kafkaFlavorSource,
+        Set<String> availableCollectors
+    ) {
+        var evidence = new java.util.LinkedHashMap<String, Object>();
+        evidence.put("control_id", control.id());
+        evidence.put("condition", control.condition() == null ? "" : control.condition());
+        evidence.put("requires", control.requires());
+        evidence.put("requires_per_mode", control.requiresPerMode());
+        evidence.put("kafka_flavor", kafkaFlavor);
+        evidence.put("kafka_flavor_source", kafkaFlavorSource);
+        evidence.put("collectors_available", new ArrayList<>(availableCollectors));
+        return evidence;
+    }
+
+    private static Map<String, Object> flavorCoverageEvidence(
+        String kafkaFlavor,
+        String kafkaFlavorSource,
+        Map<String, Object> collectedData
+    ) {
+        var out = new java.util.LinkedHashMap<String, Object>();
+        out.put("flavor", kafkaFlavor);
+        out.put("source", kafkaFlavorSource);
+        if ("override".equals(kafkaFlavorSource)) {
+            out.put("verified", false);
+            out.put("reason", "manual flavor override is not accepted as managed-service proof");
+            return out;
+        }
+        var verified = switch (kafkaFlavor) {
+            case "confluent-cloud" -> verifiedBool(collectedData, "cc", "cluster_authenticated")
+                && hasNonBlank(collectedData, "cc", "cluster_id");
+            case "aws-msk" -> verifiedBool(collectedData, "aws", "sdk_available")
+                && hasNonBlank(collectedData, "aws", "cluster_arn");
+            case "aiven" -> verifiedBool(collectedData, "aiven", "service_present");
+            case "redpanda-cloud" -> verifiedBool(collectedData, "rpcloud", "cluster_present");
+            case "azure-eventhubs" -> verifiedBool(collectedData, "azure", "namespace_present");
+            default -> false;
+        };
+        out.put("verified", verified);
+        out.put("reason", verified
+            ? "vendor collector evidence present"
+            : "vendor collector evidence missing or incomplete");
+        return out;
+    }
+
+    private static boolean verifiedBool(Map<String, Object> collectedData, String namespace, String key) {
+        return collectedData.get(namespace) instanceof Map<?, ?> m
+            && Boolean.TRUE.equals(m.get(key));
+    }
+
+    private static boolean hasNonBlank(Map<String, Object> collectedData, String namespace, String key) {
+        return collectedData.get(namespace) instanceof Map<?, ?> m
+            && m.get(key) instanceof String s
+            && !s.isBlank();
     }
 
     /** Backwards-compatible shim used by tests; treats the cluster as vanilla. */
@@ -378,6 +500,50 @@ public final class PolicyEngine {
         var refs = new java.util.LinkedHashSet<String>();
         collectAdminClientReferences(expr, refs);
         return refs;
+    }
+
+    private static Set<String> policyReferences(dev.cel.common.ast.CelExpr expr) {
+        var refs = new java.util.LinkedHashSet<String>();
+        collectPolicyReferences(expr, refs);
+        return refs;
+    }
+
+    private static void collectPolicyReferences(
+        dev.cel.common.ast.CelExpr expr,
+        Set<String> refs
+    ) {
+        switch (expr.getKind()) {
+            case IDENT -> {
+                var name = expr.ident().name();
+                if (POLICY_VAR_TO_DATA_KEY.containsKey(name)) {
+                    refs.add(name);
+                }
+            }
+            case SELECT -> collectPolicyReferences(expr.select().operand(), refs);
+            case CALL -> {
+                var call = expr.call();
+                call.target().ifPresent(target -> collectPolicyReferences(target, refs));
+                call.args().forEach(arg -> collectPolicyReferences(arg, refs));
+            }
+            case LIST -> expr.list().elements()
+                .forEach(element -> collectPolicyReferences(element, refs));
+            case STRUCT -> expr.struct().entries()
+                .forEach(entry -> collectPolicyReferences(entry.value(), refs));
+            case MAP -> expr.map().entries().forEach(entry -> {
+                collectPolicyReferences(entry.key(), refs);
+                collectPolicyReferences(entry.value(), refs);
+            });
+            case COMPREHENSION -> {
+                var c = expr.comprehension();
+                collectPolicyReferences(c.iterRange(), refs);
+                collectPolicyReferences(c.accuInit(), refs);
+                collectPolicyReferences(c.loopCondition(), refs);
+                collectPolicyReferences(c.loopStep(), refs);
+                collectPolicyReferences(c.result(), refs);
+            }
+            case CONSTANT, NOT_SET -> { }
+            default -> { }
+        }
     }
 
     private static void collectAdminClientReferences(
@@ -431,5 +597,79 @@ public final class PolicyEngine {
             missing.add("adminclient:" + dataKey);
         }
         return missing;
+    }
+
+    private static Map<String, Object> observedForReferences(
+        Set<String> refs,
+        Map<String, Object> activation
+    ) {
+        var out = new java.util.LinkedHashMap<String, Object>();
+        for (var ref : refs) {
+            if (activation.containsKey(ref)) {
+                out.put(ref, sanitizeEvidence(activation.get(ref)));
+            } else {
+                out.put(ref, "<absent>");
+            }
+        }
+        return out;
+    }
+
+    private static Object sanitizeEvidence(@Nullable Object value) {
+        return sanitizeEvidence(value, 0);
+    }
+
+    private static Object sanitizeEvidence(@Nullable Object value, int depth) {
+        if (value == null) {
+            return "<null>";
+        }
+        if (depth > 4) {
+            return "<truncated>";
+        }
+        if (value instanceof Map<?, ?> map) {
+            var out = new java.util.LinkedHashMap<String, Object>();
+            int count = 0;
+            for (var entry : map.entrySet()) {
+                if (count++ >= 80) {
+                    out.put("_truncated", true);
+                    break;
+                }
+                var key = String.valueOf(entry.getKey());
+                out.put(key, isSensitiveKey(key)
+                    ? "<redacted>"
+                    : sanitizeEvidence(entry.getValue(), depth + 1));
+            }
+            return out;
+        }
+        if (value instanceof List<?> list) {
+            var out = new ArrayList<Object>();
+            int limit = Math.min(list.size(), 50);
+            for (int i = 0; i < limit; i++) {
+                out.add(sanitizeEvidence(list.get(i), depth + 1));
+            }
+            if (list.size() > limit) {
+                out.add("<truncated:" + (list.size() - limit) + " more>");
+            }
+            return out;
+        }
+        if (value instanceof String s) {
+            return s.length() <= 4096 ? s : s.substring(0, 4096) + "...";
+        }
+        return value;
+    }
+
+    private static boolean isSensitiveKey(String key) {
+        var lower = key.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("password")
+            || lower.contains("secret")
+            || lower.contains("token")
+            || lower.contains("credential")
+            || lower.contains("authorization")
+            || lower.contains("auth_header")
+            || lower.contains("api_key")
+            || lower.contains("api-key")
+            || lower.contains("private_key")
+            || lower.contains("private-key")
+            || lower.contains("sasl.jaas.config")
+            || lower.endsWith("jaas.config");
     }
 }

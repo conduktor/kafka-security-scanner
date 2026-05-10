@@ -93,8 +93,8 @@ public final class SiemCollector implements Collector {
                     }
                 }
             });
-        } catch (Exception ignored) {
-            // listing processes can be restricted on managed runtimes; keep it best-effort
+        } catch (SecurityException e) {
+            System.err.println("[siem] process listing denied: " + e.getMessage());
         }
         return new ArrayList<>(found);
     }

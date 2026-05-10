@@ -1,5 +1,7 @@
 package io.kafkascanner.collectors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -171,11 +173,17 @@ public final class ConfluentCloudCollector implements Collector {
             Object parsed = null;
             try {
                 parsed = JSON.readValue(resp.body(), Object.class);
-            } catch (Exception ignore) {
-                // not JSON
+            } catch (JsonProcessingException e) {
+                System.err.println("[confluentcloud] response JSON parse failed: "
+                    + e.getOriginalMessage());
             }
             return new Probe(true, resp.statusCode(), parsed);
-        } catch (Exception e) {
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("[confluentcloud] probe failed: " + e.getMessage());
+            return new Probe(false, -1, null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("[confluentcloud] probe interrupted: " + e.getMessage());
             return new Probe(false, -1, null);
         }
     }
