@@ -230,6 +230,12 @@ public final class PolicyEngine {
         if (collectedData.get("topic") instanceof List<?> tl) {
             topicCount = tl.size();
         }
+        var clusterMode = "unknown";
+        if (collectedData.get("kraft") instanceof Map<?, ?> clusterMap
+            && clusterMap.get("mode") instanceof String mode
+            && !mode.isBlank()) {
+            clusterMode = mode;
+        }
 
         var collectorsUnavailable = new ArrayList<String>();
         for (var c : policy.controls()) {
@@ -266,7 +272,7 @@ public final class PolicyEngine {
             passRate,
             new ArrayList<>(availableCollectors), collectorsUnavailable,
             findings,
-            new ClusterInfo(clusterName, brokerCount, topicCount, 0, "kraft",
+            new ClusterInfo(clusterName, brokerCount, topicCount, 0, clusterMode,
                 kafkaFlavor, kafkaFlavorSource)
         );
     }

@@ -73,4 +73,15 @@ class PolicyEngineLoadTest {
             .isEqualTo(Status.na);
         assertThat(result.collectorsUnavailable()).contains("adminclient");
     }
+
+    @Test
+    void scanResultReportsCollectedClusterMode() throws Exception {
+        var engine = PolicyEngine.load(new File("policies/test-minimal-valid.yaml"));
+        var result = engine.evaluate(Map.of(
+            "broker", java.util.List.of(Map.of()),
+            "kraft", Map.of("mode", "zookeeper")
+        ), "zk-cluster", "vanilla", "test", java.util.Set.of("adminclient"));
+
+        assertThat(result.cluster().clusterMode()).isEqualTo("zookeeper");
+    }
 }
