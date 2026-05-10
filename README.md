@@ -35,7 +35,11 @@ Wrote: reports/report.json   reports/report.sarif   reports/report.html
        reports/report.csv    reports/report.pdf
 ```
 
-The same run also writes the HTML version (collapsible findings, the list of collectors that ran), a SARIF file for GitHub Code Scanning, a CSV the auditors can filter by `pci_dss`/`soc2`/`iso27001`, and a PDF with a cover page if someone has to sign it off.
+The same run also writes the HTML control-center report, with in-scope/out-of-scope tabs, readiness and theme filters, search, and per-control evidence for auditors.
+
+![Kafka Security Scanner HTML control-center report](docs/report-control-center.png)
+
+It also writes a SARIF file for GitHub Code Scanning, a CSV the auditors can filter by `pci_dss`/`soc2`/`iso27001`, and a PDF with a cover page if someone has to sign it off.
 
 ## Why a policy engine
 
