@@ -464,14 +464,14 @@ controls:
     compliance: {pci_dss: ["10.5"], nist: ["AU-4", "AU-9"], cwe: ["778"]}
 
   - id: KAFKA-AUDIT-007
-    title: "Schema Registry change audit [ecosystem]"
+    title: "Schema Registry change audit (live audit-log topic + auth)"
     severity: medium
     category: security
-    description: "Audit schema registrations, compatibility changes, and deletions"
-    requires: [schemaregistry, docs]
-    condition: "schemaregistry.reachable && schemaregistry.requires_auth && docs.schema_audit_log.exists"
-    message: "Schema Registry audit requires Schema Registry collector"
-    remediation: "Enable Schema Registry audit logging"
+    description: "SR REST must require auth AND a confluent-audit-log-events topic must exist on the broker to capture schema lifecycle events."
+    requires: [schemaregistry, adminclient]
+    condition: "schemaregistry.reachable && schemaregistry.all_subjects_require_auth && topic_meta.collected && topic_meta.audit_log_topic_present"
+    message: "Schema Registry audit pipeline incomplete: anonymous writes allowed OR no confluent-audit-log-events topic on the cluster"
+    remediation: "Enable SR auth (kafka-schema-registry-security-plugin) and provision confluent-audit-log-events on the broker"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
   - id: KAFKA-AUDIT-008
@@ -971,14 +971,14 @@ controls:
     compliance: {pci_dss: ["10.5"], nist: ["AU-3", "AU-9"], cwe: ["532", "359"]}
 
   - id: KAFKA-DATA-009
-    title: "Data contract enforcement"
+    title: "Data contract enforcement (registry + ownership annotations OR contracts topic)"
     severity: medium
     category: operational
-    description: "Define and enforce data contracts (schema, quality rules, ownership) for Kafka topics"
-    requires: [schemaregistry]
-    condition: "schemaregistry.reachable && schemaregistry.subject_count > 0 && schemaregistry.compatibility_protects_consumers"
-    message: "Data contracts prevent breaking changes and document topic ownership"
-    remediation: "Define schemas, quality rules, and ownership metadata per topic"
+    description: "SR must enforce a non-NONE compatibility mode AND either a contracts topic exists (Confluent _data-contracts / Apicurio kafkasql-journal) OR every subject carries an owner annotation."
+    requires: [schemaregistry, adminclient]
+    condition: "schemaregistry.reachable && schemaregistry.subject_count > 0 && schemaregistry.compatibility_protects_consumers && (topic_meta.data_contracts_topic_present || schemaregistry.any_subject_with_owner_annotation)"
+    message: "No data-contracts topic AND no schema carries an owner annotation — contracts can't be attributed"
+    remediation: "Provision a _data-contracts (or apicurio-registry) topic, OR add a `\"owner\"` annotation to each schema"
     compliance: {pci_dss: ["6.5"], nist: ["SI-10", "CM-3"], cwe: ["20"]}
 
   - id: KAFKA-DATA-010

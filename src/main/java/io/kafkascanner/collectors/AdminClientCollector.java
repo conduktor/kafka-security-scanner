@@ -71,6 +71,32 @@ public final class AdminClientCollector implements Collector {
         var topicMeta = new java.util.HashMap<String, Object>();
         topicMeta.put("collected", data.containsKey("topic"));
         topicMeta.put("count", (long) topicList.size());
+
+        // Detect well-known audit / contract / DLQ system topics so policy controls
+        // can prove a Confluent / Apicurio audit pipeline exists by topic presence
+        // instead of by docs file. These names are the documented Confluent /
+        // Apicurio defaults; allow either prefixed (`_`) or non-prefixed.
+        boolean auditLogTopicPresent = false;
+        boolean dataContractsTopicPresent = false;
+        boolean dlqTopicPresent = false;
+        for (var t : topicList) {
+            var name = String.valueOf(t.getOrDefault("name", "")).toLowerCase(java.util.Locale.ROOT);
+            if (name.contains("confluent-audit-log-events") || name.contains("confluent_audit_log")) {
+                auditLogTopicPresent = true;
+            }
+            if (name.contains("data-contracts") || name.contains("_data_contracts")
+                || name.contains("apicurio-registry") || name.contains("kafkasql-journal")) {
+                dataContractsTopicPresent = true;
+            }
+            if (name.endsWith("-dlq") || name.endsWith("_dlq") || name.endsWith(".dlq")
+                || name.contains("dead-letter") || name.contains("deadletter")) {
+                dlqTopicPresent = true;
+            }
+        }
+        topicMeta.put("audit_log_topic_present", auditLogTopicPresent);
+        topicMeta.put("data_contracts_topic_present", dataContractsTopicPresent);
+        topicMeta.put("dlq_topic_present", dlqTopicPresent);
+
         data.put("topic_metadata", topicMeta);
 
         @SuppressWarnings("unchecked")
