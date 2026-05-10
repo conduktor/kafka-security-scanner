@@ -2,10 +2,10 @@
 
 Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector build-out.
 
-## Current state (commit `19d2502`)
+## Current state (commit `354a62d`)
 
-- **132 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls.
-- **20 collectors**: AdminClient, JMX (multi-target), Filesystem (log4j layout parser), TLS, Process, Connect (per-connector), SchemaRegistry (annotations + anon-write probe), RestProxy, Docs, Alerts (Prometheus), Siem (process+port), Zk (4lw), ConsumerJmx, Kms (derivation), ConfluentCloud (REST + Metrics), AwsMsk (SDK v2 Kafka+EC2+CloudWatch), Aiven (REST), Cis (cis-cat / kube-bench / inspec JSON ingest).
+- **138 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls.
+- **23 collectors**: AdminClient, JMX (multi-target), Filesystem (log4j layout + cryptsetup probe), TLS, Process, Connect (per-connector), SchemaRegistry, RestProxy, Docs, Alerts (Prometheus), Siem, Zk (4lw), ConsumerJmx, Kms (derivation), ConfluentCloud, AwsMsk (SDK v2), Aiven, Cis, RedpandaCloud, AzureEventHubs, K8sNetworkPolicy (kubectl shell-out).
 - **6 statuses**: `pass / fail / na / covered_by_flavor / error`.
 - **Engine**: supports both `requires:` (unconditional) and `requires_per_mode:` (only enforced for the matching `cluster.mode`). KRaft scans no longer need a `zk` collector to evaluate ZK-004; ZK scans no longer need a `filesystem` collector to evaluate KRAFT-003.
 - Baseline against single-broker plaintext localhost:19092 with `--collectors=adminclient` (no fixtures):
@@ -27,7 +27,8 @@ Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector b
 | 6 | `019fd77` | +7 small fixes (AUTH-006/007, ACL-003/005, QUOTA-004/005, AUDIT-004) |
 | 7 | `0701985` | +6 collectors (Alerts/Siem/ConnectorConfig/Zk/SchemaContract/ConsumerJmx/Kms) + `requires_per_mode` + severity sweep |
 | 8 | `2a387c9` | +2 cloud-native collectors (ConfluentCloud REST + Metrics; AwsMsk via SDK v2) + 6 new controls |
-| 9 | `19d2502` | +3 collectors (Aiven REST; Cis report ingest; broker DNS+protocol audit) + 6 reworked controls (NET-001/002, AUDIT-007/010, DATA-008/009, OPS-002) + 3 AIVEN-* controls |
+| 9 | `19d2502` | +3 collectors (Aiven REST; Cis report ingest; broker DNS+protocol audit) + 6 reworked controls + 3 AIVEN-* controls |
+| 10 | `354a62d` | +4 collectors (cryptsetup probe; RedpandaCloud REST; Azure ARM REST; K8s NetworkPolicy via kubectl) + 6 new controls (RP-001/002/003, AZURE-001/002/003) + ENC-004 promoted high + NET-005 rewritten |
 
 ## Closed in pass 6/7
 
@@ -79,11 +80,9 @@ Each control now uses real collector data. Negative + positive cases validated e
 
 | Control | Severity | Current proof | Real proof needed |
 |---|---|---|---|
-| STREAMS-001 | medium | docs only | Streams app `state.dir` permissions probe (separate process) |
+| STREAMS-001 | medium | docs only | Streams app `state.dir` permissions probe (separate process / sidecar) |
 | STREAMS-002 | medium | docs + ACL name match | Streams `application.id` config + per-app ACL coverage from a streams sidecar |
-| NET-003 | high | non-0.0.0.0 + docs.network_topology | More cloud SDK coverage (GCP, Azure) |
-| NET-005 | medium | docs only | K8s NetworkPolicy collector |
-| ENC-004 | medium | docs only on self-hosted | cryptsetup `/proc/mounts` probe (linux only) |
+| NET-003 | high | non-0.0.0.0 + docs.network_topology | GCP firewall SDK; Azure NSG SDK (Azure namespace-level coverage already in AZURE-003) |
 
 ## Cloud-native coverage landed in pass 8
 
@@ -92,6 +91,10 @@ Each control now uses real collector data. Negative + positive cases validated e
 | Confluent Cloud | `ConfluentCloudCollector` | REST API + Metrics API auth posture; cluster type / private networking / BYOK from `/cmk/v2/clusters/{id}` when creds + cluster id supplied | KAFKA-CC-001 (auth), KAFKA-CC-002 (dedicated/enterprise tier), KAFKA-CC-003 (private networking) |
 | AWS MSK | `AwsMskCollector` (aws-sdk v2: kafka + ec2 + cloudwatch + sts) | Encryption-at-rest, in-transit (client + in-cluster), public-access mode, broker SG ingress, CloudWatch URP / OfflinePartitionsCount | KAFKA-AWS-001 (encryption-at-rest), KAFKA-AWS-002 (public access disabled), KAFKA-AWS-003 (no 0.0.0.0/0 on broker ports) |
 | Aiven | `AivenCollector` (REST + Bearer) | api.aiven.io auth posture; service spec (plan, cloud, ip_filter, kafka_authentication_methods) | KAFKA-AIVEN-001 (auth required), KAFKA-AIVEN-002 (closed ip_filter), KAFKA-AIVEN-003 (cert/SASL auth) |
+| Redpanda Cloud | `RedpandaCloudCollector` (REST + Bearer) | api.redpanda.com auth posture; cluster spec (connection_type, region, type) | KAFKA-RP-001 (auth required), KAFKA-RP-002 (private connectivity), KAFKA-RP-003 (not serverless for regulated) |
+| Azure Event Hubs | `AzureEventHubsCollector` (REST + Bearer) | management.azure.com auth posture; namespace spec (minimumTlsVersion, publicNetworkAccess, privateEndpointConnections, zoneRedundant, disableLocalAuth) | KAFKA-AZURE-001 (auth required), KAFKA-AZURE-002 (TLS >=1.2), KAFKA-AZURE-003 (public access disabled OR private endpoints exist) |
+| Kubernetes | `K8sNetworkPolicyCollector` (kubectl shell-out) | NetworkPolicies + Kafka-pod label selectors; default-deny detection | KAFKA-NET-005 (default-deny + kafka-pod-targeting NP) |
+| Self-hosted Linux | `FilesystemCollector` cryptsetup mode | /proc/mounts walk: log.dirs on /dev/mapper/* OR crypto_LUKS OR zfs* | KAFKA-ENC-004 (high) |
 
 Activation:
 - ConfluentCloud: `--cc-api-key` / `--cc-api-secret` (env `CC_API_KEY` / `CC_API_SECRET`), or auto when bootstrap matches `*.confluent.cloud`.
@@ -160,6 +163,9 @@ src/main/java/io/kafkascanner/collectors/
   AwsMskCollector.java           aws-sdk-v2 (kafka/ec2/cloudwatch) probes
   AivenCollector.java            api.aiven.io REST + service spec
   CisCollector.java              cis-cat / kube-bench / inspec JSON ingest
+  RedpandaCloudCollector.java    api.redpanda.com REST + cluster spec
+  AzureEventHubsCollector.java   management.azure.com (ARM) REST
+  K8sNetworkPolicyCollector.java kubectl shell-out for NPs + kafka pods
 
 src/main/java/io/kafkascanner/policy/PolicyEngine.java
   validate() refuses placeholders
