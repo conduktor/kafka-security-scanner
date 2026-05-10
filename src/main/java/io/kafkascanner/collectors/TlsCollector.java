@@ -9,6 +9,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import javax.naming.InvalidNameException;
+import javax.naming.ldap.LdapName;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -31,6 +34,8 @@ import javax.net.ssl.X509TrustManager;
 public final class TlsCollector implements Collector {
 
     private static final int HANDSHAKE_TIMEOUT_MS = 5_000;
+    private static final int SAN_DNS = 2;
+    private static final int SAN_IP = 7;
 
     @Override
     public String name() {
@@ -49,7 +54,7 @@ public final class TlsCollector implements Collector {
         if (colon <= 0) {
             return Map.of();
         }
-        var host = hostPort.substring(0, colon);
+        var host = stripIpv6Brackets(hostPort.substring(0, colon));
         int port;
         try {
             port = Integer.parseInt(hostPort.substring(colon + 1));
@@ -70,9 +75,11 @@ public final class TlsCollector implements Collector {
             ctx.init(null, new TrustManager[] {INSPECTING_TRUST_MANAGER}, null);
             try (SSLSocket socket = (SSLSocket) ctx.getSocketFactory().createSocket()) {
                 socket.connect(new java.net.InetSocketAddress(host, port), HANDSHAKE_TIMEOUT_MS);
-                var params = new SSLParameters();
-                params.setServerNames(java.util.List.of(new SNIHostName(host)));
-                socket.setSSLParameters(params);
+                if (!isIpLiteral(host)) {
+                    var params = new SSLParameters();
+                    params.setServerNames(java.util.List.of(new SNIHostName(host)));
+                    socket.setSSLParameters(params);
+                }
                 try {
                     socket.startHandshake();
                 } catch (javax.net.ssl.SSLException sslEx) {
@@ -95,8 +102,12 @@ public final class TlsCollector implements Collector {
 
                 var peerCerts = session.getPeerCertificates();
                 var chain = new ArrayList<Map<String, Object>>();
+                X509Certificate leafCert = null;
                 for (var c : peerCerts) {
                     if (c instanceof X509Certificate x) {
+                        if (leafCert == null) {
+                            leafCert = x;
+                        }
                         chain.add(describe(x));
                     }
                 }
@@ -108,7 +119,7 @@ public final class TlsCollector implements Collector {
                     tls.put("expired", leaf.get("expired"));
                     tls.put("key_size_bits", leaf.get("key_size_bits"));
                     tls.put("signature_algorithm", leaf.get("signature_algorithm"));
-                    tls.put("hostname_match", leaf.get("hostname_match_" + host.toLowerCase(Locale.ROOT)));
+                    tls.put("hostname_match", leafCert != null && hostnameMatches(leafCert, host));
                 }
             }
         } catch (IOException | java.security.GeneralSecurityException e) {
@@ -146,13 +157,21 @@ public final class TlsCollector implements Collector {
         }
 
         var sans = new ArrayList<String>();
+        var dnsSans = new ArrayList<String>();
+        var ipSans = new ArrayList<String>();
         try {
             var altNames = cert.getSubjectAlternativeNames();
             if (altNames != null) {
                 for (var entry : altNames) {
-                    if (entry.size() >= 2 && entry.get(1) instanceof String s) {
-                        sans.add(s);
-                        info.put("hostname_match_" + s.toLowerCase(Locale.ROOT), true);
+                    if (entry.size() >= 2 && entry.get(0) instanceof Integer type
+                        && entry.get(1) instanceof String s) {
+                        if (type == SAN_DNS) {
+                            dnsSans.add(s);
+                            sans.add(s);
+                        } else if (type == SAN_IP) {
+                            ipSans.add(s);
+                            sans.add(s);
+                        }
                     }
                 }
             }
@@ -160,7 +179,126 @@ public final class TlsCollector implements Collector {
             // SANs unparseable; leave empty
         }
         info.put("subject_alternative_names", sans);
+        info.put("dns_subject_alternative_names", dnsSans);
+        info.put("ip_subject_alternative_names", ipSans);
         return info;
+    }
+
+    static boolean dnsNameMatches(String pattern, String host) {
+        var normalizedPattern = normalizeDnsName(pattern);
+        var normalizedHost = normalizeDnsName(host);
+        if (normalizedPattern.isBlank() || normalizedHost.isBlank()) {
+            return false;
+        }
+        if (!normalizedPattern.startsWith("*.")) {
+            return normalizedPattern.equals(normalizedHost);
+        }
+        var suffix = normalizedPattern.substring(1);
+        if (!normalizedHost.endsWith(suffix)) {
+            return false;
+        }
+        var prefix = normalizedHost.substring(0, normalizedHost.length() - suffix.length());
+        return !prefix.isBlank() && prefix.indexOf('.') < 0;
+    }
+
+    static boolean hostnameMatches(X509Certificate cert, String host) {
+        var normalizedHost = stripIpv6Brackets(host);
+        var dnsSans = new ArrayList<String>();
+        var ipSans = new ArrayList<String>();
+        try {
+            var altNames = cert.getSubjectAlternativeNames();
+            if (altNames != null) {
+                for (var entry : altNames) {
+                    if (entry.size() >= 2 && entry.get(0) instanceof Integer type
+                        && entry.get(1) instanceof String s) {
+                        if (type == SAN_DNS) {
+                            dnsSans.add(s);
+                        } else if (type == SAN_IP) {
+                            ipSans.add(s);
+                        }
+                    }
+                }
+            }
+        } catch (java.security.cert.CertificateParsingException e) {
+            return false;
+        }
+
+        if (isIpLiteral(normalizedHost)) {
+            for (var ip : ipSans) {
+                if (ip.equalsIgnoreCase(normalizedHost)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (!dnsSans.isEmpty()) {
+            for (var dnsName : dnsSans) {
+                if (dnsNameMatches(dnsName, normalizedHost)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return commonName(cert)
+            .map(cn -> dnsNameMatches(cn, normalizedHost))
+            .orElse(false);
+    }
+
+    private static Optional<String> commonName(X509Certificate cert) {
+        try {
+            var ldapName = new LdapName(cert.getSubjectX500Principal().getName());
+            for (var rdn : ldapName.getRdns()) {
+                if ("CN".equalsIgnoreCase(rdn.getType())) {
+                    return Optional.of(String.valueOf(rdn.getValue()));
+                }
+            }
+        } catch (InvalidNameException e) {
+            return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    private static boolean isIpLiteral(String host) {
+        var normalizedHost = stripIpv6Brackets(host);
+        return isIpv4Literal(normalizedHost) || normalizedHost.contains(":");
+    }
+
+    private static boolean isIpv4Literal(String host) {
+        var parts = host.split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (var part : parts) {
+            if (part.isBlank() || part.length() > 3) {
+                return false;
+            }
+            for (var i = 0; i < part.length(); i++) {
+                if (!Character.isDigit(part.charAt(i))) {
+                    return false;
+                }
+            }
+            if (Integer.parseInt(part) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String normalizeDnsName(String value) {
+        var normalized = stripIpv6Brackets(value).toLowerCase(Locale.ROOT);
+        if (normalized.endsWith(".")) {
+            return normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private static String stripIpv6Brackets(String value) {
+        if (value.length() >= 2 && value.charAt(0) == '[' && value.charAt(value.length() - 1) == ']') {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
     }
 
     /**
