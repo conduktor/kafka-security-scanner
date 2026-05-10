@@ -172,6 +172,8 @@ public final class Reporters {
         sb.append(".sev-medium{background:#ffcc00;color:#1d1d1f;}");
         sb.append(".sev-low{background:#5ac8fa;color:#fff;}");
         sb.append(".sev-info{background:#8e8e93;color:#fff;}");
+        sb.append(".sev-na{background:#8e8e93;color:#fff;}");
+        sb.append(".sev-pass{background:#34c759;color:#fff;}");
         sb.append(".status-na .sev{background:#8e8e93;color:#fff;}");
         sb.append(".status-pass .sev{background:#34c759;color:#fff;}");
         sb.append(".rem{margin-top:8px;padding:8px 12px;background:#e8f4fd;border-left:3px solid #007aff;");
@@ -213,13 +215,13 @@ public final class Reporters {
             sb.append("<details class=\"status-")
                 .append(escape(f.status().name()))
                 .append("\"><summary>")
-                .append("<span class=\"sev sev-").append(f.severity().name()).append("\">")
-                .append(f.severity().name()).append("</span>")
+                .append("<span class=\"sev ").append(escape(badgeClass(f))).append("\">")
+                .append(escape(badgeText(f))).append("</span>")
                 .append("<b>").append(escape(f.controlId())).append("</b> ")
                 .append("[").append(escape(f.status().name())).append("] — ")
                 .append(escape(f.title())).append("</summary>");
             sb.append("<p>").append(escape(f.message())).append("</p>");
-            if (f.remediation() != null && !f.remediation().isEmpty()) {
+            if (shouldShowRemediation(f) && f.remediation() != null && !f.remediation().isEmpty()) {
                 sb.append("<div class=\"rem\"><b>Remediation:</b> ")
                     .append(escape(f.remediation())).append("</div>");
             }
@@ -491,6 +493,29 @@ public final class Reporters {
             case pass -> 3;
             case covered_by_flavor -> 4;
         };
+    }
+
+    private static String badgeText(Finding finding) {
+        return switch (finding.status()) {
+            case fail -> finding.severity().name();
+            case error -> "ERROR";
+            case na -> "N/A";
+            case pass -> "PASS";
+            case covered_by_flavor -> "COVERED";
+        };
+    }
+
+    private static String badgeClass(Finding finding) {
+        return switch (finding.status()) {
+            case fail -> "sev-" + finding.severity().name();
+            case error -> "sev-critical";
+            case na -> "sev-na";
+            case pass, covered_by_flavor -> "sev-pass";
+        };
+    }
+
+    private static boolean shouldShowRemediation(Finding finding) {
+        return finding.status() == Status.fail || finding.status() == Status.error;
     }
 
     private static List<Finding> resultsForAudit(ScanResult result) {
