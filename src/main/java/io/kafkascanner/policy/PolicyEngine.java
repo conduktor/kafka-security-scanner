@@ -52,6 +52,16 @@ public final class PolicyEngine {
         "brokers", "topics", "acls", "acl_meta", "topic_meta",
         "quotas", "quota_meta", "cluster"
     );
+    private static final Map<String, String> ADMIN_CLIENT_VAR_TO_DATA_KEY = Map.of(
+        "brokers", "broker",
+        "topics", "topic",
+        "acls", "acl",
+        "acl_meta", "acl",
+        "topic_meta", "topic",
+        "quotas", "quota",
+        "quota_meta", "quota",
+        "cluster", "kraft"
+    );
 
     private final Policy policy;
     private final CelCompiler compiler;
@@ -190,7 +200,7 @@ public final class PolicyEngine {
         var collectorsUnavailable = new java.util.LinkedHashSet<String>();
 
         for (var control : policy.controls()) {
-            var status = resolve(control, activation, kafkaFlavor, availableCollectors,
+            var status = resolve(control, collectedData, activation, kafkaFlavor, availableCollectors,
                 collectorsUnavailable);
 
             switch (status) {
@@ -251,6 +261,7 @@ public final class PolicyEngine {
 
     private Status resolve(
         Control control,
+        Map<String, Object> collectedData,
         Map<String, Object> activation,
         String kafkaFlavor,
         Set<String> availableCollectors,
@@ -307,10 +318,17 @@ public final class PolicyEngine {
             return Status.error;
         }
 
-        if (!availableCollectors.contains("adminclient")
-            && referencesAdminClientData(ast.getExpr())) {
-            collectorsUnavailable.add("adminclient");
-            return Status.na;
+        var adminClientRefs = adminClientReferences(ast.getExpr());
+        if (!adminClientRefs.isEmpty()) {
+            if (!availableCollectors.contains("adminclient")) {
+                collectorsUnavailable.add("adminclient");
+                return Status.na;
+            }
+            var missingSlices = missingAdminClientSlices(adminClientRefs, collectedData);
+            if (!missingSlices.isEmpty()) {
+                collectorsUnavailable.addAll(missingSlices);
+                return Status.na;
+            }
         }
 
         try {
@@ -356,34 +374,62 @@ public final class PolicyEngine {
         return scoring.weights().getOrDefault(control.severity().name(), fallback);
     }
 
-    private static boolean referencesAdminClientData(dev.cel.common.ast.CelExpr expr) {
-        return switch (expr.getKind()) {
-            case IDENT -> ADMIN_CLIENT_VARS.contains(expr.ident().name());
-            case SELECT -> referencesAdminClientData(expr.select().operand());
+    private static Set<String> adminClientReferences(dev.cel.common.ast.CelExpr expr) {
+        var refs = new java.util.LinkedHashSet<String>();
+        collectAdminClientReferences(expr, refs);
+        return refs;
+    }
+
+    private static void collectAdminClientReferences(
+        dev.cel.common.ast.CelExpr expr,
+        Set<String> refs
+    ) {
+        switch (expr.getKind()) {
+            case IDENT -> {
+                var name = expr.ident().name();
+                if (ADMIN_CLIENT_VARS.contains(name)) {
+                    refs.add(name);
+                }
+            }
+            case SELECT -> collectAdminClientReferences(expr.select().operand(), refs);
             case CALL -> {
                 var call = expr.call();
-                boolean targetUsesAdminClient = call.target()
-                    .map(PolicyEngine::referencesAdminClientData)
-                    .orElse(false);
-                yield targetUsesAdminClient
-                    || call.args().stream().anyMatch(PolicyEngine::referencesAdminClientData);
+                call.target().ifPresent(target -> collectAdminClientReferences(target, refs));
+                call.args().forEach(arg -> collectAdminClientReferences(arg, refs));
             }
-            case LIST -> expr.list().elements().stream()
-                .anyMatch(PolicyEngine::referencesAdminClientData);
-            case STRUCT -> expr.struct().entries().stream()
-                .anyMatch(e -> referencesAdminClientData(e.value()));
-            case MAP -> expr.map().entries().stream()
-                .anyMatch(e -> referencesAdminClientData(e.key())
-                    || referencesAdminClientData(e.value()));
+            case LIST -> expr.list().elements()
+                .forEach(element -> collectAdminClientReferences(element, refs));
+            case STRUCT -> expr.struct().entries()
+                .forEach(entry -> collectAdminClientReferences(entry.value(), refs));
+            case MAP -> expr.map().entries().forEach(entry -> {
+                collectAdminClientReferences(entry.key(), refs);
+                collectAdminClientReferences(entry.value(), refs);
+            });
             case COMPREHENSION -> {
                 var c = expr.comprehension();
-                yield referencesAdminClientData(c.iterRange())
-                    || referencesAdminClientData(c.accuInit())
-                    || referencesAdminClientData(c.loopCondition())
-                    || referencesAdminClientData(c.loopStep())
-                    || referencesAdminClientData(c.result());
+                collectAdminClientReferences(c.iterRange(), refs);
+                collectAdminClientReferences(c.accuInit(), refs);
+                collectAdminClientReferences(c.loopCondition(), refs);
+                collectAdminClientReferences(c.loopStep(), refs);
+                collectAdminClientReferences(c.result(), refs);
             }
-            case CONSTANT, NOT_SET -> false;
-        };
+            case CONSTANT, NOT_SET -> { }
+            default -> { }
+        }
+    }
+
+    private static Set<String> missingAdminClientSlices(
+        Set<String> refs,
+        Map<String, Object> collectedData
+    ) {
+        var missing = new java.util.LinkedHashSet<String>();
+        for (var ref : refs) {
+            var dataKey = ADMIN_CLIENT_VAR_TO_DATA_KEY.get(ref);
+            if (dataKey == null || collectedData.containsKey(dataKey)) {
+                continue;
+            }
+            missing.add("adminclient:" + dataKey);
+        }
+        return missing;
     }
 }

@@ -78,6 +78,23 @@ class PolicyEngineLoadTest {
     }
 
     @Test
+    void controlsUsingMissingAdminClientSlicesAreNa() throws Exception {
+        var engine = PolicyEngine.load(new File("policies/enterprise-default.yaml"));
+        var result = engine.evaluate(Map.of(
+            "broker", java.util.List.of(Map.of("config", Map.of())),
+            "kraft", Map.of("mode", "kraft"),
+            "acl_metadata", Map.of("collected", false)
+        ), "partial", "vanilla", "test", java.util.Set.of("adminclient"));
+
+        assertThat(result.findings())
+            .filteredOn(f -> "KAFKA-ACL-001".equals(f.controlId()))
+            .singleElement()
+            .extracting("status")
+            .isEqualTo(Status.na);
+        assertThat(result.collectorsUnavailable()).contains("adminclient:acl");
+    }
+
+    @Test
     void scanResultReportsCollectedClusterMode() throws Exception {
         var engine = PolicyEngine.load(new File("policies/test-minimal-valid.yaml"));
         var result = engine.evaluate(Map.of(
