@@ -1211,25 +1211,25 @@ controls:
 
   # ═══════════════ KAFKA STREAMS (2) ═══════════════
   - id: KAFKA-STREAMS-001
-    title: "Streams state store encryption [ecosystem]"
-    severity: medium
+    title: "Streams state.dir POSIX-protected (no world read/write)"
+    severity: high
     category: security
-    description: "Encrypt Kafka Streams local state stores (RocksDB)"
-    requires: [docs]
-    condition: "docs.streams_state_encryption.exists && docs.iac.exists"
-    message: "State stores may contain sensitive data — must be encrypted at rest"
-    remediation: "Enable filesystem encryption on state.dir and restrict permissions"
+    description: "When --streams-state-dir is provided, the directory and every immediate child must have permissions that exclude OTHERS_READ and OTHERS_WRITE (state stores hold materialized message payloads)."
+    requires: [streams]
+    condition: "!streams.state_dir_readable || streams.state_dir_secure"
+    message: "Kafka Streams state.dir or one of its children is world-readable / world-writable"
+    remediation: "chmod 700 {state.dir}/* and run the streams app as a non-root user"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28", "AC-6"], cwe: ["311", "732"]}
 
   - id: KAFKA-STREAMS-002
-    title: "Streams authentication and ACLs [ecosystem]"
+    title: "Streams application has dedicated ACL coverage"
     severity: high
     category: security
-    description: "Configure security.protocol and ACLs for Streams apps"
-    requires: [docs]
-    condition: "docs.streams_security_policy.exists && acl_meta.collected && acls.exists(a, a.permission_type == 'ALLOW' && (a.resource_name.startsWith('streams-') || a.resource_name.contains('streams')))"
-    message: "Streams applications should use SASL_SSL and least-privilege ACLs"
-    remediation: "Apply ACLs for source/sink/repartition/changelog topics used by Streams"
+    description: "When the StreamsCollector discovers an applicationId from JMX, the cluster must have at least one ACL ALLOW that targets a resource starting with that applicationId (the streams app's own topics: changelog/repartition)."
+    requires: [streams, adminclient]
+    condition: "size(streams.application_ids) == 0 || acl_meta.collected && streams.application_ids.all(app, acls.exists(a, a.permission_type == 'ALLOW' && a.resource_name.startsWith(app)))"
+    message: "A discovered Streams applicationId has no matching ACL ALLOW rule on its changelog/repartition topics"
+    remediation: "Apply ACLs for {applicationId}-* topics (changelog and repartition) to the streams principal"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "862"]}
 
   # ═══════════════ REST PROXY (1) ═══════════════

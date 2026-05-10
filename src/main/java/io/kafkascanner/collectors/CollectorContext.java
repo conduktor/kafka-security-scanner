@@ -37,6 +37,8 @@ public record CollectorContext(
     @Nullable String k8sNamespace,
     @Nullable String gcpToken,
     @Nullable String gcpProject,
+    @Nullable String streamsJmxHostPorts,
+    @Nullable String streamsStateDir,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {

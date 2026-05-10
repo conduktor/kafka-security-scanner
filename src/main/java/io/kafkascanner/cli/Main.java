@@ -205,6 +205,14 @@ public final class Main implements Runnable {
             description = "GCP project id for the gcp firewall collector")
     private String gcpProject;
 
+    @Option(names = {"--streams-jmx-host-ports"}, defaultValue = "",
+            description = "Comma-separated host:port JMX endpoints for Kafka Streams app instances")
+    private String streamsJmxHostPorts;
+
+    @Option(names = {"--streams-state-dir"}, defaultValue = "",
+            description = "Local Kafka Streams state.dir to audit POSIX perms on")
+    private String streamsStateDir;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -276,6 +284,8 @@ public final class Main implements Runnable {
                     k8sNamespace == null || k8sNamespace.isBlank() ? null : k8sNamespace,
                     gcpToken == null || gcpToken.isBlank() ? null : gcpToken,
                     gcpProject == null || gcpProject.isBlank() ? null : gcpProject,
+                    streamsJmxHostPorts.isBlank() ? null : streamsJmxHostPorts,
+                    streamsStateDir.isBlank() ? null : streamsStateDir,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -342,6 +352,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("gcp")) {
                     collectors.add(new io.kafkascanner.collectors.GcpFirewallCollector());
+                }
+                if (enabled.contains("streams")) {
+                    collectors.add(new io.kafkascanner.collectors.StreamsCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
