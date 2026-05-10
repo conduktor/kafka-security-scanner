@@ -50,6 +50,13 @@ public final class PolicyEngine {
     private static final Map<String, Integer> WEIGHTS = Map.of(
         "critical", 15, "high", 10, "medium", 5, "low", 2, "info", 0
     );
+    private static final Map<String, String> FLAVOR_SPECIFIC_COLLECTORS = Map.of(
+        "confluentcloud", "confluent-cloud",
+        "awsmsk", "aws-msk",
+        "aiven", "aiven",
+        "rpcloud", "redpanda-cloud",
+        "azure", "azure-eventhubs"
+    );
     private static final Set<String> ADMIN_CLIENT_VARS = Set.of(
         "brokers", "topics", "acls", "acl_meta", "topic_meta",
         "quotas", "quota_meta", "cluster"
@@ -323,6 +330,14 @@ public final class PolicyEngine {
         if (requires != null && !requires.isEmpty()) {
             for (var req : requires) {
                 if (!availableCollectors.contains(req)) {
+                    var requiredFlavor = FLAVOR_SPECIFIC_COLLECTORS.get(req);
+                    if (requiredFlavor != null && !requiredFlavor.equals(kafkaFlavor)) {
+                        evidence.put("reason", "not applicable for detected Kafka flavor");
+                        evidence.put("missing_collectors", List.of(req));
+                        evidence.put("applicable_flavors", List.of(requiredFlavor));
+                        evidence.put("not_applicable", true);
+                        return new Resolution(Status.na, evidence);
+                    }
                     collectorsUnavailable.add(req);
                     evidence.put("reason", "required collector not available");
                     evidence.put("missing_collectors", List.of(req));
@@ -414,9 +429,42 @@ public final class PolicyEngine {
     ) {
         return new Finding(
             control.id(), control.severity(), control.category(), status,
-            control.title(), control.message(), control.remediation(),
+            control.title(), messageForStatus(control, status, evidence), control.remediation(),
             evidence, control.compliance()
         );
+    }
+
+    private static String messageForStatus(
+        Control control,
+        Status status,
+        Map<String, Object> evidence
+    ) {
+        return switch (status) {
+            case fail -> control.message();
+            case pass -> "Control passed.";
+            case covered_by_flavor -> "Control covered by verified managed-service evidence.";
+            case na -> unavailableMessage(control, evidence);
+            case error -> "Control could not be evaluated: "
+                + String.valueOf(evidence.getOrDefault("reason", "unknown error"));
+        };
+    }
+
+    private static String unavailableMessage(Control control, Map<String, Object> evidence) {
+        var missing = evidence.get("missing_collectors");
+        if (Boolean.TRUE.equals(evidence.get("not_applicable"))) {
+            return "Not applicable for this Kafka flavor; requires collector "
+                + String.valueOf(missing) + ".";
+        }
+        if (missing != null) {
+            return "Evidence not collected; required collector unavailable: "
+                + String.valueOf(missing) + ".";
+        }
+        var missingSlices = evidence.get("missing_data_slices");
+        if (missingSlices != null) {
+            return "Evidence not collected; required AdminClient data slice unavailable: "
+                + String.valueOf(missingSlices) + ".";
+        }
+        return "Evidence not collected for control " + control.id() + ".";
     }
 
     private static Map<String, Object> baseEvidence(

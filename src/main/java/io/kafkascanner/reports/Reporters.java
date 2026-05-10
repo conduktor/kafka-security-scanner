@@ -158,6 +158,8 @@ public final class Reporters {
         sb.append(".stat{flex:1;padding:12px;background:#f5f5f7;border-radius:8px;text-align:center;}");
         sb.append(".stat .v{font-size:24px;font-weight:600;}.stat .l{font-size:12px;color:#6e6e73;}");
         sb.append("details{border:1px solid #e5e5ea;border-radius:8px;margin:8px 0;padding:12px 16px;}");
+        sb.append("details.status-na{border-color:#d1d1d6;background:#fbfbfd;}");
+        sb.append("details.status-pass{border-color:#d8ecd8;}");
         sb.append("details[open]{background:#fafafa;}");
         sb.append("summary{cursor:pointer;font-weight:500;list-style:none;}");
         sb.append("summary::-webkit-details-marker{display:none;}");
@@ -170,6 +172,8 @@ public final class Reporters {
         sb.append(".sev-medium{background:#ffcc00;color:#1d1d1f;}");
         sb.append(".sev-low{background:#5ac8fa;color:#fff;}");
         sb.append(".sev-info{background:#8e8e93;color:#fff;}");
+        sb.append(".status-na .sev{background:#8e8e93;color:#fff;}");
+        sb.append(".status-pass .sev{background:#34c759;color:#fff;}");
         sb.append(".rem{margin-top:8px;padding:8px 12px;background:#e8f4fd;border-left:3px solid #007aff;");
         sb.append("border-radius:4px;font-size:13px;}");
         sb.append("pre{white-space:pre-wrap;background:#f5f5f7;border-radius:6px;padding:10px;");
@@ -204,9 +208,11 @@ public final class Reporters {
         var reportRows = resultsForAudit(result);
         sb.append("<h2>Control Results (").append(reportRows.size()).append(")</h2>");
         var sorted = new ArrayList<>(reportRows);
-        sorted.sort((a, b) -> severityOrder(b.severity()) - severityOrder(a.severity()));
+        sorted.sort(Reporters::compareForAudit);
         for (var f : sorted) {
-            sb.append("<details><summary>")
+            sb.append("<details class=\"status-")
+                .append(escape(f.status().name()))
+                .append("\"><summary>")
                 .append("<span class=\"sev sev-").append(f.severity().name()).append("\">")
                 .append(f.severity().name()).append("</span>")
                 .append("<b>").append(escape(f.controlId())).append("</b> ")
@@ -465,8 +471,26 @@ public final class Reporters {
     /** Pre-aggregate findings for callers that want a sorted snapshot. */
     public static List<Finding> sortedBySeverity(List<Finding> findings) {
         var sorted = new ArrayList<>(findings);
-        sorted.sort((a, b) -> severityOrder(b.severity()) - severityOrder(a.severity()));
+        sorted.sort(Reporters::compareForAudit);
         return sorted;
+    }
+
+    private static int compareForAudit(Finding a, Finding b) {
+        int statusCompare = statusOrder(a.status()) - statusOrder(b.status());
+        if (statusCompare != 0) {
+            return statusCompare;
+        }
+        return severityOrder(b.severity()) - severityOrder(a.severity());
+    }
+
+    private static int statusOrder(Status status) {
+        return switch (status) {
+            case fail -> 0;
+            case error -> 1;
+            case na -> 2;
+            case pass -> 3;
+            case covered_by_flavor -> 4;
+        };
     }
 
     private static List<Finding> resultsForAudit(ScanResult result) {

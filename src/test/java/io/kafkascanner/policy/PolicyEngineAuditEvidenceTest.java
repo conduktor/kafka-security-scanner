@@ -2,6 +2,7 @@ package io.kafkascanner.policy;
 
 import static io.kafkascanner.model.ScanModels.Status.covered_by_flavor;
 import static io.kafkascanner.model.ScanModels.Status.fail;
+import static io.kafkascanner.model.ScanModels.Status.na;
 import static io.kafkascanner.model.ScanModels.Status.pass;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -117,6 +118,37 @@ class PolicyEngineAuditEvidenceTest {
                 assertThat(control.status()).isEqualTo(covered_by_flavor);
                 var coverage = (Map<String, Object>) control.evidence().get("flavor_coverage");
                 assertThat(coverage.get("verified")).isEqualTo(true);
+            });
+    }
+
+    @Test
+    void flavorSpecificMissingCollectorIsNotApplicableInsteadOfUnavailable(@TempDir Path tmp)
+        throws Exception {
+        var policy = tmp.resolve("azure.yaml");
+        Files.writeString(policy, """
+            name: azure
+            version: "1"
+            controls:
+              - id: AZURE-001
+                title: Azure control plane
+                severity: critical
+                category: security
+                requires: [azure]
+                condition: "azure.api_reachable && azure.api_requires_auth"
+                message: Azure API does not require auth
+                remediation: fix
+            """);
+
+        var engine = PolicyEngine.load(policy.toFile());
+        var result = engine.evaluate(Map.of(), "cluster", "vanilla", "hostname:localhost", Set.of());
+
+        assertThat(result.collectorsUnavailable()).isEmpty();
+        assertThat(result.controlResults()).singleElement()
+            .satisfies(control -> {
+                assertThat(control.status()).isEqualTo(na);
+                assertThat(control.message()).contains("Not applicable");
+                assertThat(control.message()).doesNotContain("does not require auth");
+                assertThat(control.evidence().get("not_applicable")).isEqualTo(true);
             });
     }
 }

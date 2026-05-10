@@ -1,8 +1,10 @@
 package io.kafkascanner.reports;
 
 import static io.kafkascanner.model.ScanModels.Category.security;
+import static io.kafkascanner.model.ScanModels.Severity.critical;
 import static io.kafkascanner.model.ScanModels.Severity.high;
 import static io.kafkascanner.model.ScanModels.Status.fail;
+import static io.kafkascanner.model.ScanModels.Status.na;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.kafkascanner.model.ScanModels.ClusterInfo;
@@ -44,6 +46,53 @@ class ReportersTest {
         assertThat(csv).contains("nist");
         assertThat(csv).contains("AU-2");
         assertThat(csv).contains("reason");
+    }
+
+    @Test
+    void htmlOrdersRealFailuresBeforeNaControls(@TempDir Path tmp) throws Exception {
+        var failFinding = new Finding(
+            "FAIL-001",
+            high,
+            security,
+            fail,
+            "Fail title",
+            "failed",
+            "fix",
+            Map.of(),
+            new Compliance(List.of(), List.of(), List.of()));
+        var naFinding = new Finding(
+            "AZURE-001",
+            critical,
+            security,
+            na,
+            "Azure title",
+            "Not applicable for this Kafka flavor; requires collector [azure].",
+            "none",
+            Map.of("not_applicable", true),
+            new Compliance(List.of(), List.of(), List.of()));
+        var result = new ScanResult(
+            "cluster",
+            "test",
+            "2026-05-10T00:00:00Z",
+            80,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0.0,
+            List.of("adminclient"),
+            List.of(),
+            List.of(naFinding, failFinding),
+            List.of(failFinding, naFinding),
+            new ClusterInfo("cluster", 1, 1, 0, "kraft", "vanilla", "default"));
+
+        var written = Reporters.write(result, "html", tmp);
+        var html = Files.readString(written.getFirst());
+
+        assertThat(html.indexOf("FAIL-001")).isLessThan(html.indexOf("AZURE-001"));
+        assertThat(html).contains("status-na");
+        assertThat(html).contains("Not applicable for this Kafka flavor");
     }
 
     private static ScanResult resultWithFindings(int count) {
