@@ -170,10 +170,9 @@ controls:
     title: "Disk encryption for log directories (dm-crypt/LUKS or ZFS native)"
     severity: high
     category: security
-    description: "Walk /proc/mounts on the broker host: every log.dirs entry must resolve to a /dev/mapper/* device, a crypto_LUKS fstype, or an encrypted ZFS dataset. Cloud-managed flavors stay SLA-covered. Self-hosted on macOS / non-Linux falls back to docs evidence."
+    description: "Walk /proc/mounts on the broker host: every log.dirs entry must resolve to a /dev/mapper/* device, a crypto_LUKS fstype, or an encrypted ZFS dataset. Self-hosted on macOS / non-Linux falls back to docs evidence — every cloud flavor now has a dedicated cloud-native control."
     requires: [filesystem]
     condition: "fs.log_dirs_proc_mounts_readable && fs.log_dirs_encrypted"
-    covered_by_kafka_flavor: [redpanda-cloud, azure-eventhubs]
     message: "A Kafka log.dirs path is on a non-encrypted device (no /dev/mapper/, no crypto_LUKS, no ZFS)"
     remediation: "Move log.dirs onto a dm-crypt / LUKS / ZFS-encrypted volume; restart the broker so the new mount is in /proc/mounts"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28"], cwe: ["311", "312"]}
@@ -1409,6 +1408,74 @@ controls:
     message: "Aiven Kafka service has neither certificate nor SASL authentication enabled"
     remediation: "Enable certificate or SASL in kafka_authentication_methods"
     compliance: {pci_dss: ["8.2"], nist: ["IA-2"], cwe: ["287", "306"]}
+
+  # ═══════════════ REDPANDA CLOUD (3) ═══════════════
+  - id: KAFKA-RP-001
+    title: "Redpanda Cloud control-plane requires auth"
+    severity: critical
+    category: security
+    description: "api.redpanda.com /v1beta2/users must reject anonymous calls"
+    requires: [rpcloud]
+    condition: "rpcloud.api_reachable && rpcloud.api_requires_auth"
+    message: "Redpanda Cloud API does not require auth — credential discipline broken"
+    remediation: "Investigate immediately; the only acceptable anonymous response is 401/403"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "306"]}
+
+  - id: KAFKA-RP-002
+    title: "Redpanda Cloud cluster uses private connectivity"
+    severity: high
+    category: security
+    description: "connection_type must be `private` (BYOC / private link) — `public` exposes the cluster on the open internet"
+    requires: [rpcloud]
+    condition: "!rpcloud.flavor_detected || !rpcloud.cluster_present || rpcloud.connection_type == 'private'"
+    message: "Redpanda Cloud cluster uses public connectivity"
+    remediation: "Migrate to a BYOC or PrivateLink-backed cluster (connection_type=private)"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  - id: KAFKA-RP-003
+    title: "Redpanda Cloud cluster is not serverless for regulated workloads"
+    severity: medium
+    category: security
+    description: "Serverless tiers share infrastructure across tenants; PII / regulated workloads must run on a Dedicated cluster"
+    requires: [rpcloud]
+    condition: "!rpcloud.flavor_detected || !rpcloud.cluster_present || !rpcloud.is_serverless"
+    message: "Redpanda Cloud cluster is serverless — multi-tenant blast-radius surface"
+    remediation: "For regulated workloads, run a Dedicated cluster (BYOC or VPC-isolated)"
+    compliance: {pci_dss: ["1.3"], nist: ["SC-32"], cwe: ["668"]}
+
+  # ═══════════════ AZURE EVENT HUBS (3) ═══════════════
+  - id: KAFKA-AZURE-001
+    title: "Azure ARM control-plane requires auth"
+    severity: critical
+    category: security
+    description: "management.azure.com must reject anonymous /subscriptions calls"
+    requires: [azure]
+    condition: "azure.api_reachable && azure.api_requires_auth"
+    message: "Azure ARM API does not require auth — token cache or proxy is leaking"
+    remediation: "Investigate; the only acceptable anonymous response is 401/403"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "306"]}
+
+  - id: KAFKA-AZURE-002
+    title: "Azure Event Hubs minimum TLS version >= 1.2"
+    severity: high
+    category: security
+    description: "namespace.properties.minimumTlsVersion must be 1.2 or higher"
+    requires: [azure]
+    condition: "!azure.flavor_detected || !azure.namespace_present || azure.minimum_tls_version == '1.2' || azure.minimum_tls_version == '1.3'"
+    message: "Azure Event Hubs namespace allows TLS < 1.2"
+    remediation: "Set minimumTlsVersion=1.2 on the namespace"
+    compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "327"]}
+
+  - id: KAFKA-AZURE-003
+    title: "Azure Event Hubs public network access disabled"
+    severity: high
+    category: security
+    description: "namespace.properties.publicNetworkAccess must be Disabled when private endpoints are used; otherwise the namespace is reachable from the public internet"
+    requires: [azure]
+    condition: "!azure.flavor_detected || !azure.namespace_present || azure.public_network_access == 'Disabled' || azure.private_endpoints_count > 0"
+    message: "Azure Event Hubs namespace is public AND has no private endpoints"
+    remediation: "Set publicNetworkAccess=Disabled and provision a Private Endpoint"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7"], cwe: ["284", "923"]}
 
 scoring:
   weights:

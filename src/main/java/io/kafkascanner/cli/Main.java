@@ -169,6 +169,30 @@ public final class Main implements Runnable {
             description = "Aiven Kafka service name for service-spec lookup")
     private String aivenService;
 
+    @Option(names = {"--rp-token"}, defaultValue = "${RP_TOKEN}",
+            description = "Redpanda Cloud OAuth bearer token (env: RP_TOKEN)")
+    private String rpToken;
+
+    @Option(names = {"--rp-cluster-id"}, defaultValue = "",
+            description = "Redpanda Cloud cluster id for cluster-spec lookup")
+    private String rpClusterId;
+
+    @Option(names = {"--azure-token"}, defaultValue = "${AZURE_TOKEN}",
+            description = "Azure ARM bearer token (env: AZURE_TOKEN; obtain via `az account get-access-token`)")
+    private String azureToken;
+
+    @Option(names = {"--azure-subscription-id"}, defaultValue = "${AZURE_SUBSCRIPTION_ID}",
+            description = "Azure subscription id for namespace lookup")
+    private String azureSubscriptionId;
+
+    @Option(names = {"--azure-resource-group"}, defaultValue = "",
+            description = "Azure resource group containing the EventHub namespace")
+    private String azureResourceGroup;
+
+    @Option(names = {"--azure-namespace"}, defaultValue = "",
+            description = "Azure EventHubs namespace name")
+    private String azureNamespace;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -230,6 +254,13 @@ public final class Main implements Runnable {
                     aivenToken == null || aivenToken.isBlank() ? null : aivenToken,
                     aivenProject.isBlank() ? null : aivenProject,
                     aivenService.isBlank() ? null : aivenService,
+                    rpToken == null || rpToken.isBlank() ? null : rpToken,
+                    rpClusterId.isBlank() ? null : rpClusterId,
+                    azureToken == null || azureToken.isBlank() ? null : azureToken,
+                    azureSubscriptionId == null || azureSubscriptionId.isBlank()
+                        ? null : azureSubscriptionId,
+                    azureResourceGroup.isBlank() ? null : azureResourceGroup,
+                    azureNamespace.isBlank() ? null : azureNamespace,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -284,6 +315,12 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("aiven")) {
                     collectors.add(new io.kafkascanner.collectors.AivenCollector());
+                }
+                if (enabled.contains("rpcloud") || enabled.contains("redpanda")) {
+                    collectors.add(new io.kafkascanner.collectors.RedpandaCloudCollector());
+                }
+                if (enabled.contains("azure") || enabled.contains("eventhubs")) {
+                    collectors.add(new io.kafkascanner.collectors.AzureEventHubsCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)

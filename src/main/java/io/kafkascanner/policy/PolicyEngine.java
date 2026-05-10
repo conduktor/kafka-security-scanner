@@ -93,6 +93,8 @@ public final class PolicyEngine {
             .addVar("aws", mapStringDyn)
             .addVar("cis", mapStringDyn)
             .addVar("aiven", mapStringDyn)
+            .addVar("rpcloud", mapStringDyn)
+            .addVar("azure", mapStringDyn)
             .build();
 
         var runtime = CelRuntimeFactory.standardCelRuntimeBuilder().build();
@@ -163,6 +165,8 @@ public final class PolicyEngine {
         activation.put("aws", collectedData.getOrDefault("aws", Map.of()));
         activation.put("cis", collectedData.getOrDefault("cis", Map.of()));
         activation.put("aiven", collectedData.getOrDefault("aiven", Map.of()));
+        activation.put("rpcloud", collectedData.getOrDefault("rpcloud", Map.of()));
+        activation.put("azure", collectedData.getOrDefault("azure", Map.of()));
 
         List<Finding> findings = new ArrayList<>();
         int passCount = 0;

@@ -28,6 +28,12 @@ public record CollectorContext(
     @Nullable String aivenToken,
     @Nullable String aivenProject,
     @Nullable String aivenService,
+    @Nullable String rpToken,
+    @Nullable String rpClusterId,
+    @Nullable String azureToken,
+    @Nullable String azureSubscriptionId,
+    @Nullable String azureResourceGroup,
+    @Nullable String azureNamespace,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -87,5 +93,13 @@ public record CollectorContext(
 
     public boolean hasAivenToken() {
         return aivenToken != null && !aivenToken.isBlank();
+    }
+
+    public boolean hasRpToken() {
+        return rpToken != null && !rpToken.isBlank();
+    }
+
+    public boolean hasAzureToken() {
+        return azureToken != null && !azureToken.isBlank();
     }
 }
