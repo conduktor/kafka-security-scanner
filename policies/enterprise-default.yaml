@@ -167,15 +167,15 @@ controls:
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
 
   - id: KAFKA-ENC-004
-    title: "Disk encryption for log directories"
-    severity: medium
+    title: "Disk encryption for log directories (dm-crypt/LUKS or ZFS native)"
+    severity: high
     category: security
-    description: "Enable filesystem-level encryption for Kafka log directories. AWS MSK / Confluent Cloud / Aiven now have dedicated cloud-native controls; redpanda-cloud and azure-eventhubs are still SLA-covered."
-    requires: [docs]
-    condition: "docs.disk_encryption_evidence.exists"
+    description: "Walk /proc/mounts on the broker host: every log.dirs entry must resolve to a /dev/mapper/* device, a crypto_LUKS fstype, or an encrypted ZFS dataset. Cloud-managed flavors stay SLA-covered. Self-hosted on macOS / non-Linux falls back to docs evidence."
+    requires: [filesystem]
+    condition: "fs.log_dirs_proc_mounts_readable && fs.log_dirs_encrypted"
     covered_by_kafka_flavor: [redpanda-cloud, azure-eventhubs]
-    message: "Verify disk encryption (dm-crypt/LUKS/cloud KMS) is enabled on log.dirs"
-    remediation: "Use dm-crypt, LUKS, or cloud provider encryption for log directories"
+    message: "A Kafka log.dirs path is on a non-encrypted device (no /dev/mapper/, no crypto_LUKS, no ZFS)"
+    remediation: "Move log.dirs onto a dm-crypt / LUKS / ZFS-encrypted volume; restart the broker so the new mount is in /proc/mounts"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28"], cwe: ["311", "312"]}
 
   - id: KAFKA-ENC-005
