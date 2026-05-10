@@ -2,11 +2,14 @@ package io.kafkascanner.policy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.kafkascanner.model.ScanModels.Status;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Map;
-import io.kafkascanner.model.ScanModels.Status;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Regression guard: every shipped policy file must load AND every control
@@ -83,5 +86,31 @@ class PolicyEngineLoadTest {
         ), "zk-cluster", "vanilla", "test", java.util.Set.of("adminclient"));
 
         assertThat(result.cluster().clusterMode()).isEqualTo("zookeeper");
+    }
+
+    @Test
+    void customPolicyScoringWeightsAreApplied(@TempDir Path tmp) throws Exception {
+        var policy = tmp.resolve("weighted.yaml");
+        Files.writeString(policy, """
+            name: weighted
+            version: "1"
+            controls:
+              - id: TEST-001
+                title: Weighted failure
+                severity: high
+                category: security
+                condition: "false"
+                message: failed
+                remediation: fix
+            scoring:
+              weights:
+                high: 25
+              pass_threshold: 70
+            """);
+
+        var engine = PolicyEngine.load(policy.toFile());
+        var result = engine.evaluate(Map.of(), "weighted", "vanilla", "test", java.util.Set.of());
+
+        assertThat(result.score()).isEqualTo(75);
     }
 }

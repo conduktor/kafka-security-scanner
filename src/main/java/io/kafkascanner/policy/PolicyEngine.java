@@ -200,8 +200,7 @@ public final class PolicyEngine {
                 }
                 case fail -> {
                     failCount++;
-                    score = Math.max(0, score
-                        - WEIGHTS.getOrDefault(control.severity().name(), 5));
+                    score = Math.max(0, score - weightFor(control));
                     findings.add(buildFinding(control, Status.fail, kafkaFlavor,
                         "control failed evaluation"));
                 }
@@ -365,5 +364,14 @@ public final class PolicyEngine {
 
     public Policy policy() {
         return policy;
+    }
+
+    private int weightFor(Control control) {
+        var fallback = WEIGHTS.getOrDefault(control.severity().name(), 5);
+        var scoring = policy.scoring();
+        if (scoring == null || scoring.weights() == null) {
+            return fallback;
+        }
+        return scoring.weights().getOrDefault(control.severity().name(), fallback);
     }
 }
