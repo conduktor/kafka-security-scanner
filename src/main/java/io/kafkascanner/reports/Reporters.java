@@ -22,6 +22,7 @@ import java.util.Set;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -244,70 +245,127 @@ public final class Reporters {
     private static Path writePdf(ScanResult result, Path outDir) throws IOException {
         var path = outDir.resolve("report.pdf");
         try (var doc = new PDDocument()) {
-            var cover = new PDPage();
-            doc.addPage(cover);
-            try (var cs = new PDPageContentStream(doc, cover)) {
-                var bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-                var regular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-                cs.beginText();
-                cs.setFont(bold, 28);
-                cs.newLineAtOffset(72, 720);
-                cs.showText("Kafka Security Scan Report");
-                cs.setFont(regular, 12);
-                cs.newLineAtOffset(0, -40);
-                cs.showText(safe("Cluster: " + result.cluster().name(), 90));
-                cs.newLineAtOffset(0, -16);
-                cs.showText(safe("Scanned: " + result.scannedAt(), 90));
-                cs.newLineAtOffset(0, -16);
-                cs.showText("Brokers: " + result.cluster().brokers()
-                    + "  ·  Topics: " + result.cluster().topics());
-                cs.newLineAtOffset(0, -32);
-                cs.setFont(bold, 48);
-                cs.showText("Score: " + result.score() + "/100  (" + grade(result.score()) + ")");
-                cs.setFont(regular, 12);
-                cs.newLineAtOffset(0, -32);
-                cs.showText(String.format(Locale.ROOT,
-                    "Pass: %d   Fail: %d   N/A: %d   Rate: %.1f%%",
-                    result.passCount(), result.failCount(),
-                    result.naCount(), result.passRate()));
-                cs.newLineAtOffset(0, -200);
-                cs.setFont(bold, 14);
-                cs.showText("Sign-off");
-                cs.setFont(regular, 11);
-                cs.newLineAtOffset(0, -32);
-                cs.showText("Reviewed by: ____________________________   Date: "
-                    + LocalDate.now(ZoneId.systemDefault()));
-                cs.newLineAtOffset(0, -24);
-                cs.showText("Approved by: ____________________________   Date: ____________");
-                cs.endText();
-            }
-            var findingsPage = new PDPage();
-            doc.addPage(findingsPage);
-            try (var cs = new PDPageContentStream(doc, findingsPage)) {
-                var bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-                var regular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
-                cs.beginText();
-                cs.setFont(bold, 18);
-                cs.newLineAtOffset(72, 750);
-                cs.showText("Findings (" + result.findings().size() + ")");
-                cs.setFont(regular, 9);
-                var sorted = new ArrayList<>(result.findings());
-                sorted.sort((a, b) -> severityOrder(b.severity()) - severityOrder(a.severity()));
-                for (var f : sorted) {
-                    cs.newLineAtOffset(0, -16);
-                    cs.setFont(bold, 9);
-                    cs.showText(f.severity().name().toUpperCase(Locale.ROOT) + "  " + f.controlId());
-                    cs.setFont(regular, 9);
-                    cs.newLineAtOffset(0, -12);
-                    cs.showText(safe(f.title(), 90));
-                    cs.newLineAtOffset(0, -10);
-                    cs.showText("  " + safe(f.message(), 100));
-                }
-                cs.endText();
-            }
+            var bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+            var regular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+            writePdfCover(doc, result, bold, regular);
+            writePdfFindings(doc, result, bold, regular);
             doc.save(path.toFile());
         }
         return path;
+    }
+
+    private static void writePdfCover(PDDocument doc, ScanResult result, PDFont bold, PDFont regular)
+        throws IOException {
+        var cover = new PDPage();
+        doc.addPage(cover);
+        try (var cs = new PDPageContentStream(doc, cover)) {
+            cs.beginText();
+            cs.setFont(bold, 28);
+            cs.newLineAtOffset(72, 720);
+            cs.showText("Kafka Security Scan Report");
+            cs.setFont(regular, 12);
+            cs.newLineAtOffset(0, -40);
+            cs.showText(safe("Cluster: " + result.cluster().name(), 90));
+            cs.newLineAtOffset(0, -16);
+            cs.showText(safe("Scanned: " + result.scannedAt(), 90));
+            cs.newLineAtOffset(0, -16);
+            cs.showText("Brokers: " + result.cluster().brokers()
+                + "  .  Topics: " + result.cluster().topics());
+            cs.newLineAtOffset(0, -32);
+            cs.setFont(bold, 48);
+            cs.showText("Score: " + result.score() + "/100  (" + grade(result.score()) + ")");
+            cs.setFont(regular, 12);
+            cs.newLineAtOffset(0, -32);
+            cs.showText(String.format(Locale.ROOT,
+                "Pass: %d   Fail: %d   N/A: %d   Rate: %.1f%%",
+                result.passCount(), result.failCount(),
+                result.naCount(), result.passRate()));
+            cs.newLineAtOffset(0, -200);
+            cs.setFont(bold, 14);
+            cs.showText("Sign-off");
+            cs.setFont(regular, 11);
+            cs.newLineAtOffset(0, -32);
+            cs.showText("Reviewed by: ____________________________   Date: "
+                + LocalDate.now(ZoneId.systemDefault()));
+            cs.newLineAtOffset(0, -24);
+            cs.showText("Approved by: ____________________________   Date: ____________");
+            cs.endText();
+        }
+    }
+
+    private static void writePdfFindings(PDDocument doc, ScanResult result, PDFont bold, PDFont regular)
+        throws IOException {
+        var sorted = new ArrayList<>(result.findings());
+        sorted.sort((a, b) -> severityOrder(b.severity()) - severityOrder(a.severity()));
+        try (var page = new PdfFindingPage(doc, bold, regular, result.findings().size())) {
+            for (var f : sorted) {
+                page.ensureSpace(48);
+                page.line(f.severity().name().toUpperCase(Locale.ROOT) + "  " + f.controlId(), bold, 9, 16);
+                page.line(safe(f.title(), 90), regular, 9, 12);
+                page.line("  " + safe(f.message(), 100), regular, 9, 20);
+            }
+        }
+    }
+
+    private static final class PdfFindingPage implements AutoCloseable {
+        private static final float X = 72;
+        private static final float TOP_Y = 750;
+        private static final float BOTTOM_Y = 72;
+
+        private final PDDocument doc;
+        private final PDFont bold;
+        private final PDFont regular;
+        private final int findingCount;
+        private @Nullable PDPageContentStream content;
+        private float y;
+
+        PdfFindingPage(PDDocument doc, PDFont bold, PDFont regular, int findingCount) throws IOException {
+            this.doc = doc;
+            this.bold = bold;
+            this.regular = regular;
+            this.findingCount = findingCount;
+            openPage();
+        }
+
+        void ensureSpace(float height) throws IOException {
+            if (y - height < BOTTOM_Y) {
+                openPage();
+            }
+        }
+
+        void line(String text, PDFont font, int size, float leading) throws IOException {
+            var current = content;
+            if (current == null) {
+                throw new IllegalStateException("PDF page is not open");
+            }
+            current.beginText();
+            current.setFont(font, size);
+            current.newLineAtOffset(X, y);
+            current.showText(safe(text, 115));
+            current.endText();
+            y -= leading;
+        }
+
+        @Override
+        public void close() throws IOException {
+            var current = content;
+            if (current != null) {
+                current.close();
+            }
+        }
+
+        private void openPage() throws IOException {
+            var current = content;
+            if (current != null) {
+                current.close();
+            }
+            var page = new PDPage();
+            doc.addPage(page);
+            content = new PDPageContentStream(doc, page);
+            y = TOP_Y;
+            line("Findings (" + findingCount + ")", bold, 18, 26);
+            line("Severity  Control", regular, 9, 16);
+        }
     }
 
     private static String csv(@Nullable String s) {
