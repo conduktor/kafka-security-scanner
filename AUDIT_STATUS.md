@@ -2,10 +2,10 @@
 
 Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector build-out.
 
-## Current state (commit `0701985`)
+## Current state (commit `2a387c9`)
 
-- **120 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls (engine `validate()` refuses `condition: "true"` without `covered_by_kafka_flavor`).
-- **15 collectors** plugged into `io.kafkascanner.collectors`: AdminClient, JMX (multi-target), Filesystem, TLS, Process, Connect (per-connector configs), SchemaRegistry (per-subject annotations + anon-write probe), RestProxy, Docs, Alerts (Prometheus), Siem (process+port), Zk (4lw), ConsumerJmx, Kms (derivation pass).
+- **126 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls (engine `validate()` refuses `condition: "true"` without `covered_by_kafka_flavor`).
+- **17 collectors** plugged into `io.kafkascanner.collectors`: AdminClient, JMX (multi-target), Filesystem, TLS, Process, Connect (per-connector configs), SchemaRegistry (per-subject annotations + anon-write probe), RestProxy, Docs, Alerts (Prometheus), Siem (process+port), Zk (4lw), ConsumerJmx, Kms (derivation pass), ConfluentCloud (REST + Metrics API), AwsMsk (SDK v2 — Kafka + EC2 + CloudWatch).
 - **6 statuses**: `pass / fail / na / covered_by_flavor / error`.
 - **Engine**: supports both `requires:` (unconditional) and `requires_per_mode:` (only enforced for the matching `cluster.mode`). KRaft scans no longer need a `zk` collector to evaluate ZK-004; ZK scans no longer need a `filesystem` collector to evaluate KRAFT-003.
 - Baseline against single-broker plaintext localhost:19092 with `--collectors=adminclient` (no fixtures):
@@ -26,6 +26,7 @@ Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector b
 | 5 | `b87aed4` | +8 (~76 / ~44) |
 | 6 | `019fd77` | +7 small fixes (AUTH-006/007, ACL-003/005, QUOTA-004/005, AUDIT-004) |
 | 7 | `0701985` | +6 collectors (Alerts/Siem/ConnectorConfig/Zk/SchemaContract/ConsumerJmx/Kms) + `requires_per_mode` + severity sweep |
+| 8 | `2a387c9` | +2 cloud-native collectors (ConfluentCloud REST + Metrics API; AwsMsk via SDK v2) + 6 new controls (CC-001/002/003, AWS-001/002/003) |
 
 ## Closed in pass 6/7
 
@@ -77,12 +78,23 @@ Each control now uses real collector data. Negative + positive cases validated e
 | OPS-002 | medium | 3 broker config keys checked | CIS benchmark JSON artifact ingest |
 | ENC-004 | medium | docs only | CloudCollector OR cryptsetup `/proc/mounts` probe |
 
-## Deferred collectors — explicit non-goals for pass 7
+## Cloud-native coverage landed in pass 8
 
-These are listed in the original priority list but skipped intentionally; each requires a heavyweight dependency or external infrastructure that isn't worth the JAR-size hit until a concrete operator asks for it.
+| Vendor | Collector | What it proves | New controls |
+|---|---|---|---|
+| Confluent Cloud | `ConfluentCloudCollector` | REST API + Metrics API auth posture; cluster type / private networking / BYOK from `/cmk/v2/clusters/{id}` when creds + cluster id supplied | KAFKA-CC-001 (auth), KAFKA-CC-002 (dedicated/enterprise tier), KAFKA-CC-003 (private networking) |
+| AWS MSK | `AwsMskCollector` (aws-sdk v2: kafka + ec2 + cloudwatch + sts) | Encryption-at-rest, in-transit (client + in-cluster), public-access mode, broker SG ingress, CloudWatch URP / OfflinePartitionsCount | KAFKA-AWS-001 (encryption-at-rest), KAFKA-AWS-002 (public access disabled), KAFKA-AWS-003 (no 0.0.0.0/0 on broker ports) |
 
-- **CloudCollector** (AWS / GCP / Azure SDK): adds 10–30 MB to the JAR; validation requires real cloud creds or localstack. Would unblock NET-003, NET-005, partial OPS-005, ENC-004.
-- **K8sCollector** (kubernetes-client): adds ~5 MB; validation needs a kubeconfig context. Beyond what FilesystemCollector already covers (Strimzi CRs are YAML on disk), the marginal value is low. Would unblock NET-001/002/005, partial KRAFT-003.
+Activation:
+- ConfluentCloud: `--cc-api-key` / `--cc-api-secret` (env `CC_API_KEY` / `CC_API_SECRET`), or auto when bootstrap matches `*.confluent.cloud`.
+- AwsMsk: `--aws-region` / `--aws-msk-cluster-arn` (env `AWS_REGION`, default credential chain), or auto when bootstrap matches `*.kafka*.amazonaws.com`.
+
+ENC-004 dropped `aws-msk` and `confluent-cloud` from `covered_by_kafka_flavor` since both flavors now have real checks. `aiven`, `redpanda-cloud`, `azure-eventhubs` stay SLA-covered until similar collectors land.
+
+## Deferred collectors — still on the backlog
+
+- **AivenCollector / RedpandaCloudCollector / AzureEventHubsCollector**: each follows the ConfluentCloud pattern (REST API + Basic auth or OAuth). The first operator request lands them.
+- **GcpCollector** / **K8sCollector**: out-of-scope until a clear use case beyond what FilesystemCollector + AwsMsk already cover.
 - **Filesystem / Process per-broker remoting**: requires SSH or k8s exec. Operators with multi-broker clusters today run the scanner per-host or mount each config dir into the scanner container.
 
 ## Engine work landed
@@ -136,6 +148,8 @@ src/main/java/io/kafkascanner/collectors/
   ZkAdminCollector.java          4lw probe (sensitive_commands_leaked)
   ConsumerJmxCollector.java      consumer-fetch-manager-metrics records-lag-max
   KmsCollector.java              derivation: ${provider:path} placeholder analysis
+  ConfluentCloudCollector.java   api.confluent.cloud + Metrics API probes
+  AwsMskCollector.java           aws-sdk-v2 (kafka/ec2/cloudwatch) probes
 
 src/main/java/io/kafkascanner/policy/PolicyEngine.java
   validate() refuses placeholders
