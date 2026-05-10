@@ -2,10 +2,13 @@
 
 Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector build-out.
 
-## Current state (commit `354a62d`)
+## Current state (commit `019d5aa` — pushed to origin/main)
 
 - **138 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls.
-- **23 collectors**: AdminClient, JMX (multi-target), Filesystem (log4j layout + cryptsetup probe), TLS, Process, Connect (per-connector), SchemaRegistry, RestProxy, Docs, Alerts (Prometheus), Siem, Zk (4lw), ConsumerJmx, Kms (derivation), ConfluentCloud, AwsMsk (SDK v2), Aiven, Cis, RedpandaCloud, AzureEventHubs, K8sNetworkPolicy (kubectl shell-out).
+- **25 collectors**: AdminClient, JMX (multi-target), Filesystem (log4j layout + cryptsetup probe), TLS, Process, Connect (per-connector), SchemaRegistry, RestProxy, Docs, Alerts (Prometheus), Siem, Zk (4lw), ConsumerJmx, Kms (derivation), ConfluentCloud, AwsMsk (SDK v2), Aiven, Cis, RedpandaCloud, AzureEventHubs, K8sNetworkPolicy (kubectl shell), GcpFirewall (REST), Streams (JMX + FS).
+- **CollectorRunner**: virtual-thread parallel; per-collector deadline = scan-timeout + 2s.
+- **Reporters**: JSON / SARIF / HTML / CSV / PDF; PDF Unicode-safe; HTML surfaces collectors_used + flavor.
+- **Tests**: 13 unit tests (KmsCollector, CisCollector, PolicyEngineLoad) + 1 Testcontainers integration.
 - **6 statuses**: `pass / fail / na / covered_by_flavor / error`.
 - **Engine**: supports both `requires:` (unconditional) and `requires_per_mode:` (only enforced for the matching `cluster.mode`). KRaft scans no longer need a `zk` collector to evaluate ZK-004; ZK scans no longer need a `filesystem` collector to evaluate KRAFT-003.
 - Baseline against single-broker plaintext localhost:19092 with `--collectors=adminclient` (no fixtures):
@@ -28,7 +31,8 @@ Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector b
 | 7 | `0701985` | +6 collectors (Alerts/Siem/ConnectorConfig/Zk/SchemaContract/ConsumerJmx/Kms) + `requires_per_mode` + severity sweep |
 | 8 | `2a387c9` | +2 cloud-native collectors (ConfluentCloud REST + Metrics; AwsMsk via SDK v2) + 6 new controls |
 | 9 | `19d2502` | +3 collectors (Aiven REST; Cis report ingest; broker DNS+protocol audit) + 6 reworked controls + 3 AIVEN-* controls |
-| 10 | `354a62d` | +4 collectors (cryptsetup probe; RedpandaCloud REST; Azure ARM REST; K8s NetworkPolicy via kubectl) + 6 new controls (RP-001/002/003, AZURE-001/002/003) + ENC-004 promoted high + NET-005 rewritten |
+| 10 | `354a62d` | +4 collectors (cryptsetup probe; RedpandaCloud REST; Azure ARM REST; K8s NetworkPolicy via kubectl) + 6 new controls + ENC-004 promoted high |
+| 11 | `019d5aa` | +2 collectors (GcpFirewall, Streams) + STREAMS-001/002 closed + NET-003 rewritten + GCP-001 added; CollectorRunner parallel; PDF Unicode safety; 13 unit tests; README rewritten; matrix re-validated; **pushed to origin** |
 
 ## Closed in pass 6/7
 
@@ -80,9 +84,12 @@ Each control now uses real collector data. Negative + positive cases validated e
 
 | Control | Severity | Current proof | Real proof needed |
 |---|---|---|---|
-| STREAMS-001 | medium | docs only | Streams app `state.dir` permissions probe (separate process / sidecar) |
-| STREAMS-002 | medium | docs + ACL name match | Streams `application.id` config + per-app ACL coverage from a streams sidecar |
-| NET-003 | high | non-0.0.0.0 + docs.network_topology | GCP firewall SDK; Azure NSG SDK (Azure namespace-level coverage already in AZURE-003) |
+| (none high/critical) | — | — | — |
+
+The remaining backlog is deliberately scoped out for now:
+- **Azure NSG SDK** (named subnet ingress, beyond what AZURE-003 already covers).
+- **GCP VPC firewall by tag selectors** (the current GcpFirewallCollector treats all firewalls as cluster-applicable; richer matching would scope to broker VM tags).
+- **More cloud vendors**: GCP Pub/Sub Lite, Yandex Cloud, OCI Streaming. Each follows the existing REST pattern.
 
 ## Cloud-native coverage landed in pass 8
 
