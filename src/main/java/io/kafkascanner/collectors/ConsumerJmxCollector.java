@@ -8,8 +8,6 @@ import java.util.Map;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
-import javax.management.remote.JMXConnectorFactory;
-import javax.management.remote.JMXServiceURL;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -56,7 +54,7 @@ public final class ConsumerJmxCollector implements Collector {
         var unreachable = new ArrayList<String>();
         for (var hp : targets) {
             var url = "service:jmx:rmi:///jndi/rmi://" + hp + "/jmxrmi";
-            try (JMXConnector conn = JMXConnectorFactory.connect(new JMXServiceURL(url))) {
+            try (JMXConnector conn = JmxConnectorSupport.connect(url, context.timeout())) {
                 var mbsc = conn.getMBeanServerConnection();
                 var lags = readClientLag(mbsc);
                 perTarget.put(hp, lags);

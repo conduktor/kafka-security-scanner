@@ -14,8 +14,6 @@ import java.util.Set;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
-import javax.management.remote.JMXConnectorFactory;
-import javax.management.remote.JMXServiceURL;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -69,7 +67,7 @@ public final class StreamsCollector implements Collector {
         int reachable = 0;
         for (var hp : jmxTargets) {
             var url = "service:jmx:rmi:///jndi/rmi://" + hp + "/jmxrmi";
-            try (JMXConnector conn = JMXConnectorFactory.connect(new JMXServiceURL(url))) {
+            try (JMXConnector conn = JmxConnectorSupport.connect(url, context.timeout())) {
                 var mbsc = conn.getMBeanServerConnection();
                 var info = readStreams(mbsc);
                 perTarget.put(hp, info);

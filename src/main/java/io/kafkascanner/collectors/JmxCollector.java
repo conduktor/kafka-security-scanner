@@ -9,8 +9,6 @@ import java.util.Map;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.remote.JMXConnector;
-import javax.management.remote.JMXConnectorFactory;
-import javax.management.remote.JMXServiceURL;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
@@ -55,7 +53,7 @@ public final class JmxCollector implements Collector {
         var unreachable = new ArrayList<String>();
 
         for (var hp : targets) {
-            var single = collectFromOne(hp);
+            var single = collectFromOne(hp, context.timeout());
             if (single == null) {
                 unreachable.add(hp);
                 continue;
@@ -94,10 +92,10 @@ public final class JmxCollector implements Collector {
     }
 
     @SuppressWarnings("BanJNDI")
-    private static @Nullable Map<String, Object> collectFromOne(String hostPort) {
+    private static @Nullable Map<String, Object> collectFromOne(String hostPort, java.time.Duration timeout) {
         var url = "service:jmx:rmi:///jndi/rmi://" + hostPort + "/jmxrmi";
         var jmx = new HashMap<String, Object>();
-        try (JMXConnector conn = JMXConnectorFactory.connect(new JMXServiceURL(url))) {
+        try (JMXConnector conn = JmxConnectorSupport.connect(url, timeout)) {
             var mbsc = conn.getMBeanServerConnection();
             putIfPresent(jmx, "under_replicated_partitions",
                 readLong(mbsc, "kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions"));
