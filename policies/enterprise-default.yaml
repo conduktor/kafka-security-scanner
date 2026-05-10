@@ -497,14 +497,14 @@ controls:
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-3", "AU-12"], cwe: ["778", "223"]}
 
   - id: KAFKA-AUDIT-010
-    title: "Data operations audit (produce/consume)"
+    title: "Data operations audit captures principal + client identity"
     severity: high
     category: security
-    description: "Capture audit events for produce/consume/subscribe with principal, clientId, source IP"
+    description: "Audit / request loggers must be configured AND the log4j PatternLayout must include %X{principal} and %X{clientId}/%X{remoteAddress} so every record identifies who did what from where."
     requires: [filesystem]
-    condition: "!('files' in fs) || (fs.request_logger_configured && fs.auth_logger_configured)"
-    message: "Data operations audit requires an intercepting proxy (Conduktor Gateway) or verbose logging"
-    remediation: "Store audit events in append-only topics with restricted delete ACLs"
+    condition: "fs.request_logger_configured && fs.auth_logger_configured && fs.audit_layout_includes_principal && fs.audit_layout_includes_client"
+    message: "Audit log layout does not capture principal and/or client identity (clientId / remote address)"
+    remediation: "Set the appender layout to include %X{principal} %X{clientId} %X{remoteAddress} (or equivalent MDC keys)"
     compliance: {pci_dss: ["10.2"], nist: ["AU-2", "AU-12"], cwe: ["778", "223"]}
 
   # ═══════════════ HIGH AVAILABILITY / DR (3) ═══════════════
@@ -623,23 +623,23 @@ controls:
 
   # ═══════════════ NETWORK SECURITY (5) ═══════════════
   - id: KAFKA-NET-001
-    title: "Listener isolation configured"
+    title: "Listener isolation: at least two distinct protocol classes"
     severity: high
     category: security
-    description: "Configure separate listeners for internal and external traffic"
-    condition: "brokers.all(b, 'config' in b && 'listener.security.protocol.map' in b.config && b.config['listener.security.protocol.map'].contains(','))"
-    message: "Separate internal/external listeners ensure traffic isolation"
-    remediation: "Configure separate listeners for INTERNAL and EXTERNAL traffic"
+    description: "listener.security.protocol.map must define at least two listeners that map to DIFFERENT protocol classes (e.g. INTERNAL:PLAINTEXT + EXTERNAL:SASL_SSL). Two PLAINTEXT entries don't isolate."
+    condition: "brokers.all(b, 'listener_protocols_distinct_count' in b && b.listener_protocols_distinct_count >= 2)"
+    message: "Broker has ≤1 distinct listener protocol class — internal and external traffic are not isolated"
+    remediation: "Define listener.security.protocol.map with separate listeners for internal (e.g. SSL) and external (e.g. SASL_SSL) — two PLAINTEXT entries don't count"
     compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
 
   - id: KAFKA-NET-002
-    title: "Advertised listeners correctly configured"
+    title: "Advertised listeners resolve to private addresses"
     severity: high
     category: security
-    description: "Configure advertised.listeners correctly to prevent internal address exposure"
-    condition: "brokers.all(b, 'config' in b && 'advertised.listeners' in b.config && b.config['advertised.listeners'].size() > 0 && !b.config['advertised.listeners'].contains('://0.0.0.0:'))"
-    message: "Advertised listeners should match external-facing addresses"
-    remediation: "Set advertised.listeners to DNS names resolvable by clients"
+    description: "Every advertised.listeners host must resolve to a private/loopback/link-local/ULA address (RFC1918 / RFC4193 / 127.0.0.0/8). Public IPs or unresolvable hosts both fail."
+    condition: "brokers.all(b, 'advertised_hosts' in b && !b.advertised_hosts_public)"
+    message: "An advertised.listeners host resolves to a public IP (or fails to resolve) — clients reach brokers across the open internet"
+    remediation: "Set advertised.listeners to DNS names that resolve only to private subnets reachable by your clients (VPC peering / PrivateLink / overlay network)"
     compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "200"]}
 
   - id: KAFKA-NET-003
@@ -960,14 +960,14 @@ controls:
     compliance: {pci_dss: ["3.4"], nist: ["SI-4", "SC-28"], cwe: ["200", "359"]}
 
   - id: KAFKA-DATA-008
-    title: "PII redaction in logs"
+    title: "PII redaction in logs (no bare %message in PatternLayout)"
     severity: high
     category: security
-    description: "Redact or avoid logging message payloads containing PII"
+    description: "Audit logger must be configured, log files must not be world-readable, AND the log4j PatternLayout must NOT contain a bare %m / %message / %msg directive that would dump topic payload to disk."
     requires: [filesystem]
-    condition: "'files' in fs && fs.audit_logger_configured && !fs.any_log_file_world_readable"
-    message: "Application logs and traces must not contain PII from Kafka messages"
-    remediation: "Redact message bodies from logs; use structured logging with PII filtering"
+    condition: "fs.audit_logger_configured && !fs.any_log_file_world_readable && fs.audit_layout_redacts_message"
+    message: "log4j PatternLayout contains a bare %message directive — topic payloads will be written verbatim to the audit log"
+    remediation: "Replace %m with structured MDC keys (%X{operation} %X{topic} %X{principal}); or wrap %m with a redaction filter"
     compliance: {pci_dss: ["10.5"], nist: ["AU-3", "AU-9"], cwe: ["532", "359"]}
 
   - id: KAFKA-DATA-009

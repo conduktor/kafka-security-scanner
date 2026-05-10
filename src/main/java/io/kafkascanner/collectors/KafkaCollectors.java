@@ -1,5 +1,7 @@
 package io.kafkascanner.collectors;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -92,15 +94,20 @@ public final class KafkaCollectors {
 
             var listeners = new ArrayList<Map<String, Object>>();
             var listenerMap = configMap.getOrDefault("listener.security.protocol.map", "");
+            var distinctProtocols = new java.util.LinkedHashSet<String>();
             if (!listenerMap.isEmpty()) {
                 for (var mapping : listenerMap.split(",")) {
                     var parts = mapping.split(":");
                     if (parts.length == 2) {
-                        listeners.add(Map.of("protocol", parts[1].trim()));
+                        var name = parts[0].trim();
+                        var proto = parts[1].trim().toUpperCase(java.util.Locale.ROOT);
+                        listeners.add(Map.of("name", (Object) name, "protocol", (Object) proto));
+                        distinctProtocols.add(proto);
                     }
                 }
             } else {
-                listeners.add(Map.of("protocol", "PLAINTEXT"));
+                listeners.add(Map.of("name", (Object) "PLAINTEXT", "protocol", (Object) "PLAINTEXT"));
+                distinctProtocols.add("PLAINTEXT");
             }
 
             // Pre-parse numeric configs so CEL conditions can compare with `<`/`>` —
@@ -118,6 +125,11 @@ public final class KafkaCollectors {
                 }
             }
 
+            // DNS audit on advertised.listeners — controls (NET-002) need to know
+            // whether any advertised host resolves to a public IP.
+            var advertisedAudit = auditAdvertisedHosts(
+                configMap.getOrDefault("advertised.listeners", ""));
+
             var brokerEntry = new HashMap<String, Object>();
             brokerEntry.put("broker_id", (long) node.id());
             brokerEntry.put("host", node.host());
@@ -125,6 +137,11 @@ public final class KafkaCollectors {
             brokerEntry.put("config", configMap);
             brokerEntry.put("config_int", configInt);
             brokerEntry.put("listeners", listeners);
+            brokerEntry.put("listener_protocol_classes", new ArrayList<>(distinctProtocols));
+            brokerEntry.put("listener_protocols_distinct_count", (long) distinctProtocols.size());
+            brokerEntry.put("advertised_hosts", advertisedAudit.hosts);
+            brokerEntry.put("advertised_hosts_public", advertisedAudit.anyPublic);
+            brokerEntry.put("advertised_hosts_unresolved", advertisedAudit.unresolved);
             brokerEntry.put("sasl", sasl);
             brokerEntry.put("tls", tls);
             brokerEntry.put("metrics", new HashMap<String, Double>());
@@ -317,5 +334,67 @@ public final class KafkaCollectors {
             "voter_count", voterCount,
             "mode", mode
         );
+    }
+
+    private record AdvertisedAudit(List<String> hosts, boolean anyPublic, List<String> unresolved) { }
+
+    /**
+     * Parse {@code advertised.listeners} (e.g. {@code PLAINTEXT://host:9092,SASL_SSL://host2:9094})
+     * and return DNS-resolution metadata. Localhost / 0.0.0.0 / link-local /
+     * RFC1918 addresses are private; everything else (including unresolvable
+     * hostnames) is flagged so the operator inspects manually.
+     */
+    private static AdvertisedAudit auditAdvertisedHosts(String advertised) {
+        var hosts = new ArrayList<String>();
+        var unresolved = new ArrayList<String>();
+        boolean anyPublic = false;
+        if (advertised == null || advertised.isBlank()) {
+            return new AdvertisedAudit(hosts, false, unresolved);
+        }
+        for (var entry : advertised.split(",")) {
+            var t = entry.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            // strip the listener-name prefix (PLAINTEXT://host:9092 -> host:9092)
+            int sep = t.indexOf("://");
+            if (sep > 0) {
+                t = t.substring(sep + 3);
+            }
+            int colon = t.lastIndexOf(':');
+            var host = colon > 0 ? t.substring(0, colon) : t;
+            host = host.replaceAll("[\\[\\]]", "");
+            if (host.isBlank() || "0.0.0.0".equals(host) || "::".equals(host)) {
+                continue;
+            }
+            hosts.add(host);
+            try {
+                var addrs = InetAddress.getAllByName(host);
+                boolean public_ = false;
+                for (var addr : addrs) {
+                    if (isPrivate(addr)) {
+                        continue;
+                    }
+                    public_ = true;
+                    break;
+                }
+                if (public_) {
+                    anyPublic = true;
+                }
+            } catch (UnknownHostException e) {
+                unresolved.add(host);
+                anyPublic = true;
+            }
+        }
+        return new AdvertisedAudit(hosts, anyPublic, unresolved);
+    }
+
+    /** True for loopback / link-local / site-local / RFC4193 ULA. */
+    private static boolean isPrivate(InetAddress addr) {
+        return addr.isLoopbackAddress()
+            || addr.isLinkLocalAddress()
+            || addr.isSiteLocalAddress()
+            || addr.isAnyLocalAddress()
+            || (addr.getAddress().length == 16 && (addr.getAddress()[0] & 0xfe) == 0xfc);
     }
 }

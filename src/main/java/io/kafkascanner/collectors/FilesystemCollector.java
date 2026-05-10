@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -104,8 +105,35 @@ public final class FilesystemCollector implements Collector {
         // for a different (non-rolling) appender block.
         fs.put("audit_log_retention_configured", hasRollingRetention(log4j));
 
+        // Layout-pattern audit: AUDIT-010 wants every record to identify the
+        // principal AND clientId/remoteAddress; DATA-008 wants no bare %message
+        // expansion that would leak topic payload into the audit trail.
+        fs.put("audit_layout_includes_principal", LAYOUT_PRINCIPAL.matcher(log4j).find());
+        fs.put("audit_layout_includes_client",
+            LAYOUT_CLIENT_ID.matcher(log4j).find()
+                || LAYOUT_REMOTE_ADDR.matcher(log4j).find());
+        fs.put("audit_layout_redacts_message", !LAYOUT_BARE_MESSAGE.matcher(log4j).find());
+
         return Map.of("fs", fs);
     }
+
+    /** %X{principal} or %m's containing the literal "principal=" placeholder. */
+    private static final Pattern LAYOUT_PRINCIPAL = Pattern.compile(
+        "(?i)%(X|MDC)\\{principal\\}|principal=%X|principal=\\$\\{");
+
+    private static final Pattern LAYOUT_CLIENT_ID = Pattern.compile(
+        "(?i)%(X|MDC)\\{(client[._-]?id|clientid)\\}");
+
+    private static final Pattern LAYOUT_REMOTE_ADDR = Pattern.compile(
+        "(?i)%(X|MDC)\\{(remoteAddress|remote[._-]?address|remote[._-]?ip|client[._-]?ip)\\}");
+
+    /**
+     * Bare {@code %m}/{@code %message}/{@code %msg} on an appender that the
+     * audit pipeline writes to. Matched without surrounding format flags or
+     * MDC selectors — those are considered intentional shaping.
+     */
+    private static final Pattern LAYOUT_BARE_MESSAGE = Pattern.compile(
+        "(?<![A-Za-z_])%(m|msg|message)(?![A-Za-z_])");
 
     /**
      * True iff log4j config defines a rolling appender that also pins retention.
