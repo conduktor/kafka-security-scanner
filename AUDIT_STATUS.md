@@ -2,10 +2,10 @@
 
 Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector build-out.
 
-## Current state (commit `2a387c9`)
+## Current state (commit `19d2502`)
 
-- **126 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls (engine `validate()` refuses `condition: "true"` without `covered_by_kafka_flavor`).
-- **17 collectors** plugged into `io.kafkascanner.collectors`: AdminClient, JMX (multi-target), Filesystem, TLS, Process, Connect (per-connector configs), SchemaRegistry (per-subject annotations + anon-write probe), RestProxy, Docs, Alerts (Prometheus), Siem (process+port), Zk (4lw), ConsumerJmx, Kms (derivation pass), ConfluentCloud (REST + Metrics API), AwsMsk (SDK v2 — Kafka + EC2 + CloudWatch).
+- **132 controls** in `policies/enterprise-default.yaml`. Zero attestations, zero placeholder controls.
+- **20 collectors**: AdminClient, JMX (multi-target), Filesystem (log4j layout parser), TLS, Process, Connect (per-connector), SchemaRegistry (annotations + anon-write probe), RestProxy, Docs, Alerts (Prometheus), Siem (process+port), Zk (4lw), ConsumerJmx, Kms (derivation), ConfluentCloud (REST + Metrics), AwsMsk (SDK v2 Kafka+EC2+CloudWatch), Aiven (REST), Cis (cis-cat / kube-bench / inspec JSON ingest).
 - **6 statuses**: `pass / fail / na / covered_by_flavor / error`.
 - **Engine**: supports both `requires:` (unconditional) and `requires_per_mode:` (only enforced for the matching `cluster.mode`). KRaft scans no longer need a `zk` collector to evaluate ZK-004; ZK scans no longer need a `filesystem` collector to evaluate KRAFT-003.
 - Baseline against single-broker plaintext localhost:19092 with `--collectors=adminclient` (no fixtures):
@@ -26,7 +26,8 @@ Snapshot of remaining work after Codex audits 1–4 and the pass 6/7 collector b
 | 5 | `b87aed4` | +8 (~76 / ~44) |
 | 6 | `019fd77` | +7 small fixes (AUTH-006/007, ACL-003/005, QUOTA-004/005, AUDIT-004) |
 | 7 | `0701985` | +6 collectors (Alerts/Siem/ConnectorConfig/Zk/SchemaContract/ConsumerJmx/Kms) + `requires_per_mode` + severity sweep |
-| 8 | `2a387c9` | +2 cloud-native collectors (ConfluentCloud REST + Metrics API; AwsMsk via SDK v2) + 6 new controls (CC-001/002/003, AWS-001/002/003) |
+| 8 | `2a387c9` | +2 cloud-native collectors (ConfluentCloud REST + Metrics; AwsMsk via SDK v2) + 6 new controls |
+| 9 | `19d2502` | +3 collectors (Aiven REST; Cis report ingest; broker DNS+protocol audit) + 6 reworked controls (NET-001/002, AUDIT-007/010, DATA-008/009, OPS-002) + 3 AIVEN-* controls |
 
 ## Closed in pass 6/7
 
@@ -61,22 +62,28 @@ Each control now uses real collector data. Negative + positive cases validated e
 | SR-002 | Anonymous POST /subjects/{}/versions returns 401/403 per subject | SchemaContractCollector |
 | ZK-004 | Sensitive 4lw commands all rejected (probed) on ZK branch only | ZkAdminCollector + per-mode requires |
 
+## Closed in pass 9
+
+| Control | New proof | Source |
+|---|---|---|
+| NET-001 | ≥2 distinct protocol classes in listener.security.protocol.map | KafkaCollectors (`broker.listener_protocols_distinct_count`) |
+| NET-002 | InetAddress.getAllByName + RFC1918/4193 check on every advertised host | KafkaCollectors (`broker.advertised_hosts_public`) |
+| AUDIT-007 | SR auth + confluent-audit-log-events topic on broker | SchemaRegistry + AdminClient (`topic_meta.audit_log_topic_present`) |
+| AUDIT-010 | log4j PatternLayout includes %X{principal} + %X{clientId}/%X{remoteAddress} | FilesystemCollector |
+| DATA-008 | log4j PatternLayout has no bare %m / %message / %msg | FilesystemCollector |
+| DATA-009 | SR compat ≠ NONE + (data-contracts topic OR per-subject @owner) | SR + AdminClient |
+| OPS-002 | broker hardening + CIS report ≥ 90% pass | CisCollector |
+| AIVEN-001/002/003 | api.aiven.io 401 + ip_filter closed + cert/SASL auth | AivenCollector |
+
 ## Still bounded — kept as best-effort or deferred
 
 | Control | Severity | Current proof | Real proof needed |
 |---|---|---|---|
-| AUDIT-007 | medium | SR reachable + auth + docs.schema_audit_log | Confluent `_audit-log` topic enumeration via AdminClient |
-| AUDIT-010 | medium | request+auth loggers configured | Log4j layout pattern parsing for `%X{principal} %X{clientId} %X{remoteAddress}` |
-| DATA-008 | high | audit logger configured | Log4j layout `%message` exposing topic payload |
-| DATA-009 | medium | SR subject count + compatibility | Data-contract metadata collector (Confluent `_data_contracts` topic OR Apicurio) |
 | STREAMS-001 | medium | docs only | Streams app `state.dir` permissions probe (separate process) |
 | STREAMS-002 | medium | docs + ACL name match | Streams `application.id` config + per-app ACL coverage from a streams sidecar |
-| NET-001 | medium | listener map has comma | Distinct listener names mapped to different protocol classes |
-| NET-002 | medium | advertised.listeners ≠ 0.0.0.0 | DNS resolver: validate advertised host resolves to a private subnet |
-| NET-003 | high | non-0.0.0.0 + docs.network_topology | **CloudCollector** (deferred) |
-| NET-005 | medium | docs only | **CloudCollector / K8sCollector** (deferred) |
-| OPS-002 | medium | 3 broker config keys checked | CIS benchmark JSON artifact ingest |
-| ENC-004 | medium | docs only | CloudCollector OR cryptsetup `/proc/mounts` probe |
+| NET-003 | high | non-0.0.0.0 + docs.network_topology | More cloud SDK coverage (GCP, Azure) |
+| NET-005 | medium | docs only | K8s NetworkPolicy collector |
+| ENC-004 | medium | docs only on self-hosted | cryptsetup `/proc/mounts` probe (linux only) |
 
 ## Cloud-native coverage landed in pass 8
 
@@ -84,6 +91,7 @@ Each control now uses real collector data. Negative + positive cases validated e
 |---|---|---|---|
 | Confluent Cloud | `ConfluentCloudCollector` | REST API + Metrics API auth posture; cluster type / private networking / BYOK from `/cmk/v2/clusters/{id}` when creds + cluster id supplied | KAFKA-CC-001 (auth), KAFKA-CC-002 (dedicated/enterprise tier), KAFKA-CC-003 (private networking) |
 | AWS MSK | `AwsMskCollector` (aws-sdk v2: kafka + ec2 + cloudwatch + sts) | Encryption-at-rest, in-transit (client + in-cluster), public-access mode, broker SG ingress, CloudWatch URP / OfflinePartitionsCount | KAFKA-AWS-001 (encryption-at-rest), KAFKA-AWS-002 (public access disabled), KAFKA-AWS-003 (no 0.0.0.0/0 on broker ports) |
+| Aiven | `AivenCollector` (REST + Bearer) | api.aiven.io auth posture; service spec (plan, cloud, ip_filter, kafka_authentication_methods) | KAFKA-AIVEN-001 (auth required), KAFKA-AIVEN-002 (closed ip_filter), KAFKA-AIVEN-003 (cert/SASL auth) |
 
 Activation:
 - ConfluentCloud: `--cc-api-key` / `--cc-api-secret` (env `CC_API_KEY` / `CC_API_SECRET`), or auto when bootstrap matches `*.confluent.cloud`.
@@ -150,6 +158,8 @@ src/main/java/io/kafkascanner/collectors/
   KmsCollector.java              derivation: ${provider:path} placeholder analysis
   ConfluentCloudCollector.java   api.confluent.cloud + Metrics API probes
   AwsMskCollector.java           aws-sdk-v2 (kafka/ec2/cloudwatch) probes
+  AivenCollector.java            api.aiven.io REST + service spec
+  CisCollector.java              cis-cat / kube-bench / inspec JSON ingest
 
 src/main/java/io/kafkascanner/policy/PolicyEngine.java
   validate() refuses placeholders
