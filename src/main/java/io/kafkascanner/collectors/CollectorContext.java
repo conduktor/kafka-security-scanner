@@ -34,6 +34,7 @@ public record CollectorContext(
     @Nullable String azureSubscriptionId,
     @Nullable String azureResourceGroup,
     @Nullable String azureNamespace,
+    @Nullable String k8sNamespace,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -101,5 +102,9 @@ public record CollectorContext(
 
     public boolean hasAzureToken() {
         return azureToken != null && !azureToken.isBlank();
+    }
+
+    public boolean hasK8sNamespace() {
+        return k8sNamespace != null && !k8sNamespace.isBlank();
     }
 }

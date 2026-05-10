@@ -663,14 +663,14 @@ controls:
     compliance: {pci_dss: ["4.1"], nist: ["SC-8", "SC-13"], cwe: ["319", "311"]}
 
   - id: KAFKA-NET-005
-    title: "Trust zones for sensitive data"
-    severity: medium
+    title: "K8s NetworkPolicy isolates Kafka pods"
+    severity: high
     category: security
-    description: "Isolate sensitive data into dedicated clusters or network zones"
-    requires: [docs]
-    condition: "docs.iac.exists && docs.data_classification.exists"
-    message: "Isolate sensitive data flows into dedicated clusters or trust zones"
-    remediation: "Use dedicated clusters for PII/PCI data with sanitization pipelines"
+    description: "Run `kubectl get networkpolicies` in the broker namespace: at least one NetworkPolicy must select Kafka pods (app=kafka / strimzi.io/cluster / app.kubernetes.io/name=kafka) AND a cluster-wide default-deny NP must exist."
+    requires: [k8s]
+    condition: "k8s.kubectl_available && k8s.network_policies_count > 0 && (k8s.kafka_pods_count == 0 || k8s.kafka_pods_protected) && k8s.default_deny_present"
+    message: "Kafka pods are not isolated: no NetworkPolicy selects them OR no default-deny NP exists"
+    remediation: "Apply a default-deny NP plus a podSelector NP that targets your Kafka workload (app=kafka or strimzi.io/cluster=<name>)"
     compliance: {pci_dss: ["1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
 
   # ═══════════════ ZOOKEEPER SECURITY (4) ═══════════════

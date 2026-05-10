@@ -193,6 +193,10 @@ public final class Main implements Runnable {
             description = "Azure EventHubs namespace name")
     private String azureNamespace;
 
+    @Option(names = {"--k8s-namespace"}, defaultValue = "${K8S_NAMESPACE}",
+            description = "Kubernetes namespace for the k8s collector (uses local kubectl)")
+    private String k8sNamespace;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -261,6 +265,7 @@ public final class Main implements Runnable {
                         ? null : azureSubscriptionId,
                     azureResourceGroup.isBlank() ? null : azureResourceGroup,
                     azureNamespace.isBlank() ? null : azureNamespace,
+                    k8sNamespace == null || k8sNamespace.isBlank() ? null : k8sNamespace,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -321,6 +326,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("azure") || enabled.contains("eventhubs")) {
                     collectors.add(new io.kafkascanner.collectors.AzureEventHubsCollector());
+                }
+                if (enabled.contains("k8s") || enabled.contains("kubernetes")) {
+                    collectors.add(new io.kafkascanner.collectors.K8sNetworkPolicyCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
