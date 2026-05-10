@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Loads policy YAML and evaluates CEL conditions against the collected snapshot.
@@ -47,6 +48,12 @@ public final class PolicyEngine {
 
     private static final Map<String, Integer> WEIGHTS = Map.of(
         "critical", 15, "high", 10, "medium", 5, "low", 2, "info", 0
+    );
+
+    private static final Pattern ADMIN_CLIENT_VAR = Pattern.compile(
+        "(^|[^A-Za-z0-9_\\.])"
+            + "(brokers|topics|acls|acl_meta|topic_meta|quotas|quota_meta|cluster)"
+            + "(\\b|\\s*\\.|\\s*\\[)"
     );
 
     private final Policy policy;
@@ -245,6 +252,11 @@ public final class PolicyEngine {
                     }
                 }
             }
+            if (!availableCollectors.contains("adminclient")
+                && usesAdminClientData(c.condition())
+                && !collectorsUnavailable.contains("adminclient")) {
+                collectorsUnavailable.add("adminclient");
+            }
         }
 
         return new ScanResult(
@@ -306,6 +318,9 @@ public final class PolicyEngine {
         if (condition == null || condition.isBlank()) {
             return Status.error;
         }
+        if (!availableCollectors.contains("adminclient") && usesAdminClientData(condition)) {
+            return Status.na;
+        }
 
         try {
             var ast = compiler.compile(condition).getAst();
@@ -330,6 +345,10 @@ public final class PolicyEngine {
             control.title(), control.message(), control.remediation(),
             evidence, control.compliance()
         );
+    }
+
+    private static boolean usesAdminClientData(String condition) {
+        return condition != null && ADMIN_CLIENT_VAR.matcher(condition).find();
     }
 
     /** Backwards-compatible shim used by tests; treats the cluster as vanilla. */

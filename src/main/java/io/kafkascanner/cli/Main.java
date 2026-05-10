@@ -270,8 +270,9 @@ public final class Main implements Runnable {
                 allCollectorsRan.add("kms");
 
                 var brokerData = enrichedData.get("broker");
-                if (brokerData == null
-                    || (brokerData instanceof java.util.List<?> bl && bl.isEmpty())) {
+                boolean adminClientSelected = collectors.stream()
+                    .anyMatch(c -> "adminclient".equals(c.name()));
+                if (adminClientSelected && missingBrokerData(brokerData)) {
                     System.err.println("Scan error: no broker data collected (cluster unreachable?)");
                     System.exit(EXIT_ERROR);
                 }
@@ -445,6 +446,10 @@ public final class Main implements Runnable {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private static boolean missingBrokerData(Object brokerData) {
+        return brokerData == null || (brokerData instanceof java.util.List<?> bl && bl.isEmpty());
     }
 
     private void printTerminal(ScanResult result) {

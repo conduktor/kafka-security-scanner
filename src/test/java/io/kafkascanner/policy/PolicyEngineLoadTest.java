@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.HashSet;
 import java.util.Map;
+import io.kafkascanner.model.ScanModels.Status;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -58,5 +59,18 @@ class PolicyEngineLoadTest {
         var total = result.passCount() + result.failCount() + result.naCount()
             + result.errorCount();
         assertThat(total).isEqualTo(engine.policy().controls().size());
+    }
+
+    @Test
+    void adminClientControlsAreNaWhenAdminClientDidNotRun() throws Exception {
+        var engine = PolicyEngine.load(new File("policies/enterprise-default.yaml"));
+        var result = engine.evaluate(Map.of(), "empty", "vanilla", "test", java.util.Set.of());
+
+        assertThat(result.findings())
+            .filteredOn(f -> "KAFKA-AUTH-001".equals(f.controlId()))
+            .singleElement()
+            .extracting("status")
+            .isEqualTo(Status.na);
+        assertThat(result.collectorsUnavailable()).contains("adminclient");
     }
 }
