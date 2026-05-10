@@ -133,19 +133,19 @@ public final class Main implements Runnable {
             description = "Comma-separated host:port consumer JMX endpoints for the consumerjmx collector")
     private String consumerJmxHostPorts;
 
-    @Option(names = {"--cc-api-key"}, defaultValue = "${CC_API_KEY}",
+    @Option(names = {"--cc-api-key"}, defaultValue = "",
             description = "Confluent Cloud API key (env: CC_API_KEY)")
     private String ccApiKey;
 
-    @Option(names = {"--cc-api-secret"}, defaultValue = "${CC_API_SECRET}",
+    @Option(names = {"--cc-api-secret"}, defaultValue = "",
             description = "Confluent Cloud API secret (env: CC_API_SECRET)")
     private String ccApiSecret;
 
-    @Option(names = {"--cc-cluster-id"}, defaultValue = "${CC_CLUSTER_ID}",
+    @Option(names = {"--cc-cluster-id"}, defaultValue = "",
             description = "Confluent Cloud Kafka cluster id (lkc-XXXXX)")
     private String ccClusterId;
 
-    @Option(names = {"--aws-region"}, defaultValue = "${AWS_REGION}",
+    @Option(names = {"--aws-region"}, defaultValue = "",
             description = "AWS region for the awsmsk collector (env: AWS_REGION)")
     private String awsRegion;
 
@@ -157,7 +157,7 @@ public final class Main implements Runnable {
             description = "Path to a CIS / kube-bench / inspec JSON report for the cis collector")
     private String cisReportPath;
 
-    @Option(names = {"--aiven-token"}, defaultValue = "${AIVEN_TOKEN}",
+    @Option(names = {"--aiven-token"}, defaultValue = "",
             description = "Aiven API token (env: AIVEN_TOKEN)")
     private String aivenToken;
 
@@ -169,7 +169,7 @@ public final class Main implements Runnable {
             description = "Aiven Kafka service name for service-spec lookup")
     private String aivenService;
 
-    @Option(names = {"--rp-token"}, defaultValue = "${RP_TOKEN}",
+    @Option(names = {"--rp-token"}, defaultValue = "",
             description = "Redpanda Cloud OAuth bearer token (env: RP_TOKEN)")
     private String rpToken;
 
@@ -177,11 +177,11 @@ public final class Main implements Runnable {
             description = "Redpanda Cloud cluster id for cluster-spec lookup")
     private String rpClusterId;
 
-    @Option(names = {"--azure-token"}, defaultValue = "${AZURE_TOKEN}",
+    @Option(names = {"--azure-token"}, defaultValue = "",
             description = "Azure ARM bearer token (env: AZURE_TOKEN; obtain via `az account get-access-token`)")
     private String azureToken;
 
-    @Option(names = {"--azure-subscription-id"}, defaultValue = "${AZURE_SUBSCRIPTION_ID}",
+    @Option(names = {"--azure-subscription-id"}, defaultValue = "",
             description = "Azure subscription id for namespace lookup")
     private String azureSubscriptionId;
 
@@ -193,15 +193,15 @@ public final class Main implements Runnable {
             description = "Azure EventHubs namespace name")
     private String azureNamespace;
 
-    @Option(names = {"--k8s-namespace"}, defaultValue = "${K8S_NAMESPACE}",
+    @Option(names = {"--k8s-namespace"}, defaultValue = "",
             description = "Kubernetes namespace for the k8s collector (uses local kubectl)")
     private String k8sNamespace;
 
-    @Option(names = {"--gcp-token"}, defaultValue = "${GCP_TOKEN}",
+    @Option(names = {"--gcp-token"}, defaultValue = "",
             description = "GCP OAuth bearer (env: GCP_TOKEN; obtain via `gcloud auth print-access-token`)")
     private String gcpToken;
 
-    @Option(names = {"--gcp-project"}, defaultValue = "${GCP_PROJECT}",
+    @Option(names = {"--gcp-project"}, defaultValue = "",
             description = "GCP project id for the gcp firewall collector")
     private String gcpProject;
 
@@ -254,41 +254,9 @@ public final class Main implements Runnable {
                 for (var name : props.stringPropertyNames()) {
                     saslProps.put(name, props.getProperty(name));
                 }
-                var ctx = new CollectorContext(
-                    bootstrap, Duration.ofSeconds(timeout), admin,
-                    kafkaConfigDir.isBlank() ? null : kafkaConfigDir,
-                    jmxHostPort.isBlank() ? null : jmxHostPort,
-                    connectUrl.isBlank() ? null : connectUrl,
-                    schemaRegistryUrl.isBlank() ? null : schemaRegistryUrl,
-                    restProxyUrl.isBlank() ? null : restProxyUrl,
-                    docsDir.isBlank() ? null : docsDir,
-                    prometheusUrl.isBlank() ? null : prometheusUrl,
-                    zkAdminHostPort.isBlank() ? null : zkAdminHostPort,
-                    consumerJmxHostPorts.isBlank() ? null : consumerJmxHostPorts,
-                    ccApiKey == null || ccApiKey.isBlank() ? null : ccApiKey,
-                    ccApiSecret == null || ccApiSecret.isBlank() ? null : ccApiSecret,
-                    ccClusterId == null || ccClusterId.isBlank() ? null : ccClusterId,
-                    awsRegion == null || awsRegion.isBlank() ? null : awsRegion,
-                    awsMskClusterArn.isBlank() ? null : awsMskClusterArn,
-                    cisReportPath.isBlank() ? null : cisReportPath,
-                    aivenToken == null || aivenToken.isBlank() ? null : aivenToken,
-                    aivenProject.isBlank() ? null : aivenProject,
-                    aivenService.isBlank() ? null : aivenService,
-                    rpToken == null || rpToken.isBlank() ? null : rpToken,
-                    rpClusterId.isBlank() ? null : rpClusterId,
-                    azureToken == null || azureToken.isBlank() ? null : azureToken,
-                    azureSubscriptionId == null || azureSubscriptionId.isBlank()
-                        ? null : azureSubscriptionId,
-                    azureResourceGroup.isBlank() ? null : azureResourceGroup,
-                    azureNamespace.isBlank() ? null : azureNamespace,
-                    k8sNamespace == null || k8sNamespace.isBlank() ? null : k8sNamespace,
-                    gcpToken == null || gcpToken.isBlank() ? null : gcpToken,
-                    gcpProject == null || gcpProject.isBlank() ? null : gcpProject,
-                    streamsJmxHostPorts.isBlank() ? null : streamsJmxHostPorts,
-                    streamsStateDir.isBlank() ? null : streamsStateDir,
-                    java.util.Map.copyOf(saslProps), detection.flavor()
-                );
-                var collectors = buildCollectors(collectorsCsv);
+                var ctx = createCollectorContext(admin, Duration.ofSeconds(timeout),
+                    saslProps, detection.flavor());
+                var collectors = buildCollectors(collectorsCsv, ctx);
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
                         .collect(java.util.stream.Collectors.joining(",")) + ")...");
@@ -329,7 +297,51 @@ public final class Main implements Runnable {
         }
     }
 
-    private static java.util.List<Collector> buildCollectors(String collectorsCsv) {
+    private CollectorContext createCollectorContext(
+        AdminClient admin,
+        Duration scanTimeout,
+        Map<String, String> saslProps,
+        String kafkaFlavor
+    ) {
+        return new CollectorContext(
+            bootstrap, scanTimeout, admin,
+            blankToNull(kafkaConfigDir),
+            blankToNull(jmxHostPort),
+            blankToNull(connectUrl),
+            blankToNull(schemaRegistryUrl),
+            blankToNull(restProxyUrl),
+            blankToNull(docsDir),
+            blankToNull(prometheusUrl),
+            blankToNull(zkAdminHostPort),
+            blankToNull(consumerJmxHostPorts),
+            optionOrEnv(ccApiKey, "CC_API_KEY"),
+            optionOrEnv(ccApiSecret, "CC_API_SECRET"),
+            optionOrEnv(ccClusterId, "CC_CLUSTER_ID"),
+            optionOrEnv(awsRegion, "AWS_REGION", "AWS_DEFAULT_REGION"),
+            blankToNull(awsMskClusterArn),
+            blankToNull(cisReportPath),
+            optionOrEnv(aivenToken, "AIVEN_TOKEN"),
+            blankToNull(aivenProject),
+            blankToNull(aivenService),
+            optionOrEnv(rpToken, "RP_TOKEN"),
+            blankToNull(rpClusterId),
+            optionOrEnv(azureToken, "AZURE_TOKEN"),
+            optionOrEnv(azureSubscriptionId, "AZURE_SUBSCRIPTION_ID"),
+            blankToNull(azureResourceGroup),
+            blankToNull(azureNamespace),
+            optionOrEnv(k8sNamespace, "K8S_NAMESPACE"),
+            optionOrEnv(gcpToken, "GCP_TOKEN"),
+            optionOrEnv(gcpProject, "GCP_PROJECT"),
+            blankToNull(streamsJmxHostPorts),
+            blankToNull(streamsStateDir),
+            java.util.Map.copyOf(saslProps), kafkaFlavor
+        );
+    }
+
+    private static java.util.List<Collector> buildCollectors(
+        String collectorsCsv,
+        CollectorContext context
+    ) {
         var enabled = CollectorRunner.parseNames(collectorsCsv);
         var collectors = new java.util.ArrayList<Collector>();
         if (enabled.contains("adminclient")) {
@@ -371,34 +383,68 @@ public final class Main implements Runnable {
         if (enabled.contains("consumerjmx")) {
             collectors.add(new io.kafkascanner.collectors.ConsumerJmxCollector());
         }
-        if (enabled.contains("confluentcloud") || enabled.contains("cc")) {
-            collectors.add(new io.kafkascanner.collectors.ConfluentCloudCollector());
-        }
-        if (enabled.contains("awsmsk") || enabled.contains("msk")) {
-            collectors.add(new io.kafkascanner.collectors.AwsMskCollector());
-        }
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.ConfluentCloudCollector(),
+            "confluentcloud", "cc");
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.AwsMskCollector(),
+            "awsmsk", "msk");
         if (enabled.contains("cis")) {
             collectors.add(new io.kafkascanner.collectors.CisCollector());
         }
-        if (enabled.contains("aiven")) {
-            collectors.add(new io.kafkascanner.collectors.AivenCollector());
-        }
-        if (enabled.contains("rpcloud") || enabled.contains("redpanda")) {
-            collectors.add(new io.kafkascanner.collectors.RedpandaCloudCollector());
-        }
-        if (enabled.contains("azure") || enabled.contains("eventhubs")) {
-            collectors.add(new io.kafkascanner.collectors.AzureEventHubsCollector());
-        }
-        if (enabled.contains("k8s") || enabled.contains("kubernetes")) {
-            collectors.add(new io.kafkascanner.collectors.K8sNetworkPolicyCollector());
-        }
-        if (enabled.contains("gcp")) {
-            collectors.add(new io.kafkascanner.collectors.GcpFirewallCollector());
-        }
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.AivenCollector(), "aiven");
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.RedpandaCloudCollector(),
+            "rpcloud", "redpanda");
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.AzureEventHubsCollector(),
+            "azure", "eventhubs");
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.K8sNetworkPolicyCollector(),
+            "k8s", "kubernetes");
+        addIfEnabledOrAvailable(collectors, enabled, context,
+            new io.kafkascanner.collectors.GcpFirewallCollector(), "gcp");
         if (enabled.contains("streams")) {
             collectors.add(new io.kafkascanner.collectors.StreamsCollector());
         }
         return collectors;
+    }
+
+    private static void addIfEnabledOrAvailable(
+        java.util.List<Collector> collectors,
+        java.util.Set<String> enabled,
+        CollectorContext context,
+        Collector collector,
+        String... aliases
+    ) {
+        for (var alias : aliases) {
+            if (enabled.contains(alias)) {
+                collectors.add(collector);
+                return;
+            }
+        }
+        if (collector.isAvailable(context)) {
+            collectors.add(collector);
+        }
+    }
+
+    private static String optionOrEnv(String value, String... envNames) {
+        var explicit = blankToNull(value);
+        if (explicit != null) {
+            return explicit;
+        }
+        for (var envName : envNames) {
+            var envValue = blankToNull(System.getenv(envName));
+            if (envValue != null) {
+                return envValue;
+            }
+        }
+        return null;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private void printTerminal(ScanResult result) {
