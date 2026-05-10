@@ -157,6 +157,18 @@ public final class Main implements Runnable {
             description = "Path to a CIS / kube-bench / inspec JSON report for the cis collector")
     private String cisReportPath;
 
+    @Option(names = {"--aiven-token"}, defaultValue = "${AIVEN_TOKEN}",
+            description = "Aiven API token (env: AIVEN_TOKEN)")
+    private String aivenToken;
+
+    @Option(names = {"--aiven-project"}, defaultValue = "",
+            description = "Aiven project name for service-spec lookup")
+    private String aivenProject;
+
+    @Option(names = {"--aiven-service"}, defaultValue = "",
+            description = "Aiven Kafka service name for service-spec lookup")
+    private String aivenService;
+
     private static final Map<String, String> BUILTIN_POLICIES = Map.of(
         "enterprise", "policies/enterprise-default.yaml",
         "community", "policies/test-minimal-valid.yaml",
@@ -215,6 +227,9 @@ public final class Main implements Runnable {
                     awsRegion == null || awsRegion.isBlank() ? null : awsRegion,
                     awsMskClusterArn.isBlank() ? null : awsMskClusterArn,
                     cisReportPath.isBlank() ? null : cisReportPath,
+                    aivenToken == null || aivenToken.isBlank() ? null : aivenToken,
+                    aivenProject.isBlank() ? null : aivenProject,
+                    aivenService.isBlank() ? null : aivenService,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
                 var enabled = CollectorRunner.parseNames(collectorsCsv);
@@ -266,6 +281,9 @@ public final class Main implements Runnable {
                 }
                 if (enabled.contains("cis")) {
                     collectors.add(new io.kafkascanner.collectors.CisCollector());
+                }
+                if (enabled.contains("aiven")) {
+                    collectors.add(new io.kafkascanner.collectors.AivenCollector());
                 }
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)

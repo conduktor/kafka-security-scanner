@@ -25,6 +25,9 @@ public record CollectorContext(
     @Nullable String awsRegion,
     @Nullable String awsMskClusterArn,
     @Nullable String cisReportPath,
+    @Nullable String aivenToken,
+    @Nullable String aivenProject,
+    @Nullable String aivenService,
     Map<String, String> saslProps,
     String kafkaFlavor
 ) {
@@ -80,5 +83,9 @@ public record CollectorContext(
 
     public boolean hasCisReport() {
         return cisReportPath != null && !cisReportPath.isBlank();
+    }
+
+    public boolean hasAivenToken() {
+        return aivenToken != null && !aivenToken.isBlank();
     }
 }

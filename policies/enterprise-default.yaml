@@ -170,10 +170,10 @@ controls:
     title: "Disk encryption for log directories"
     severity: medium
     category: security
-    description: "Enable filesystem-level encryption for Kafka log directories. AWS MSK and Confluent Cloud are now checked via dedicated KAFKA-AWS-001 / KAFKA-CC controls; aiven/redpanda-cloud/azure-eventhubs are still SLA-covered."
+    description: "Enable filesystem-level encryption for Kafka log directories. AWS MSK / Confluent Cloud / Aiven now have dedicated cloud-native controls; redpanda-cloud and azure-eventhubs are still SLA-covered."
     requires: [docs]
     condition: "docs.disk_encryption_evidence.exists"
-    covered_by_kafka_flavor: [aiven, redpanda-cloud, azure-eventhubs]
+    covered_by_kafka_flavor: [redpanda-cloud, azure-eventhubs]
     message: "Verify disk encryption (dm-crypt/LUKS/cloud KMS) is enabled on log.dirs"
     remediation: "Use dm-crypt, LUKS, or cloud provider encryption for log directories"
     compliance: {pci_dss: ["3.4"], nist: ["SC-28"], cwe: ["311", "312"]}
@@ -1375,6 +1375,40 @@ controls:
     message: "An MSK broker security group allows 0.0.0.0/0 ingress on 9092/9094/9098"
     remediation: "Tighten the SG ingress rules to private subnets / VPC peering / corporate CIDRs only"
     compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  # ═══════════════ AIVEN (3) ═══════════════
+  - id: KAFKA-AIVEN-001
+    title: "Aiven control-plane requires auth"
+    severity: critical
+    category: security
+    description: "api.aiven.io must reject unauthenticated requests on /v1/me"
+    requires: [aiven]
+    condition: "aiven.api_reachable && aiven.api_requires_auth"
+    message: "Aiven API does not require auth on /v1/me — credential discipline broken"
+    remediation: "Investigate; the only acceptable anonymous response is 401/403"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2", "AC-3"], cwe: ["287", "306"]}
+
+  - id: KAFKA-AIVEN-002
+    title: "Aiven service has a non-empty IP filter"
+    severity: high
+    category: security
+    description: "user_config.ip_filter must be set to a closed list of CIDRs (not empty, not containing 0.0.0.0/0). Without --aiven-token / --aiven-project / --aiven-service the check short-circuits."
+    requires: [aiven]
+    condition: "!aiven.flavor_detected || !aiven.service_present || (aiven.ip_filter_count > 0 && !aiven.ip_filter_open)"
+    message: "Aiven service has empty ip_filter OR contains 0.0.0.0/0 — exposed to the open internet"
+    remediation: "Set user_config.ip_filter to your office / VPN / VPC CIDRs only"
+    compliance: {pci_dss: ["1.2", "1.3"], nist: ["SC-7", "AC-4"], cwe: ["284", "923"]}
+
+  - id: KAFKA-AIVEN-003
+    title: "Aiven service auth methods include certificate or SASL"
+    severity: high
+    category: security
+    description: "user_config.kafka_authentication_methods must enable certificate AND/OR SASL — never PLAINTEXT only"
+    requires: [aiven]
+    condition: "!aiven.flavor_detected || !aiven.service_present || aiven.kafka_authentication_methods.exists(m, m == 'certificate' || m == 'sasl')"
+    message: "Aiven Kafka service has neither certificate nor SASL authentication enabled"
+    remediation: "Enable certificate or SASL in kafka_authentication_methods"
+    compliance: {pci_dss: ["8.2"], nist: ["IA-2"], cwe: ["287", "306"]}
 
 scoring:
   weights:
