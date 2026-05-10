@@ -120,6 +120,12 @@ pmd {
 }
 
 tasks.named('pmdTest').configure { enabled = false }
+tasks.named('pmdMain').configure {
+    // PMD 7.x currently crashes inside ASM/type resolution on Java 25 class files
+    // before ignoreFailures can downgrade the result. Keep Checkstyle/ErrorProne
+    // as the enforced source gates and skip PMD until the toolchain catches up.
+    enabled = false
+}
 tasks.named('checkstyleTest').configure { enabled = false }
 tasks.named('spotbugsTest').configure { enabled = false }
 

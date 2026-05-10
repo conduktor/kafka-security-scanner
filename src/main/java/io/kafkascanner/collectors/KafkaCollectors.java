@@ -370,15 +370,15 @@ public final class KafkaCollectors {
             hosts.add(host);
             try {
                 var addrs = InetAddress.getAllByName(host);
-                boolean public_ = false;
+                boolean publicAddress = false;
                 for (var addr : addrs) {
                     if (isPrivate(addr)) {
                         continue;
                     }
-                    public_ = true;
+                    publicAddress = true;
                     break;
                 }
-                if (public_) {
+                if (publicAddress) {
                     anyPublic = true;
                 }
             } catch (UnknownHostException e) {

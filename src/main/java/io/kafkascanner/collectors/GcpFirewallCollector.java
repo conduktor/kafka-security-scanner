@@ -163,13 +163,15 @@ public final class GcpFirewallCollector implements Collector {
 
     private static boolean portRangeCoversBrokerPort(String spec) {
         try {
-            int lo, hi;
+            int lo;
+            int hi;
             if (spec.contains("-")) {
                 var parts = spec.split("-", 2);
                 lo = Integer.parseInt(parts[0].trim());
                 hi = Integer.parseInt(parts[1].trim());
             } else {
-                lo = hi = Integer.parseInt(spec.trim());
+                lo = Integer.parseInt(spec.trim());
+                hi = lo;
             }
             for (int p : BROKER_PORTS) {
                 if (p >= lo && p <= hi) {

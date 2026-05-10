@@ -288,74 +288,7 @@ public final class Main implements Runnable {
                     streamsStateDir.isBlank() ? null : streamsStateDir,
                     java.util.Map.copyOf(saslProps), detection.flavor()
                 );
-                var enabled = CollectorRunner.parseNames(collectorsCsv);
-                var collectors = new java.util.ArrayList<Collector>();
-                if (enabled.contains("adminclient")) {
-                    collectors.add(new AdminClientCollector());
-                }
-                if (enabled.contains("jmx")) {
-                    collectors.add(new io.kafkascanner.collectors.JmxCollector());
-                }
-                if (enabled.contains("filesystem")) {
-                    collectors.add(new io.kafkascanner.collectors.FilesystemCollector());
-                }
-                if (enabled.contains("tls")) {
-                    collectors.add(new io.kafkascanner.collectors.TlsCollector());
-                }
-                if (enabled.contains("process")) {
-                    collectors.add(new io.kafkascanner.collectors.ProcessCollector());
-                }
-                if (enabled.contains("connect")) {
-                    collectors.add(new io.kafkascanner.collectors.ConnectCollector());
-                }
-                if (enabled.contains("schemaregistry")) {
-                    collectors.add(new io.kafkascanner.collectors.SchemaRegistryCollector());
-                }
-                if (enabled.contains("restproxy")) {
-                    collectors.add(new io.kafkascanner.collectors.RestProxyCollector());
-                }
-                if (enabled.contains("docs")) {
-                    collectors.add(new io.kafkascanner.collectors.DocsCollector());
-                }
-                if (enabled.contains("alerts")) {
-                    collectors.add(new io.kafkascanner.collectors.AlertRuleCollector());
-                }
-                if (enabled.contains("siem")) {
-                    collectors.add(new io.kafkascanner.collectors.SiemCollector());
-                }
-                if (enabled.contains("zk")) {
-                    collectors.add(new io.kafkascanner.collectors.ZkAdminCollector());
-                }
-                if (enabled.contains("consumerjmx")) {
-                    collectors.add(new io.kafkascanner.collectors.ConsumerJmxCollector());
-                }
-                if (enabled.contains("confluentcloud") || enabled.contains("cc")) {
-                    collectors.add(new io.kafkascanner.collectors.ConfluentCloudCollector());
-                }
-                if (enabled.contains("awsmsk") || enabled.contains("msk")) {
-                    collectors.add(new io.kafkascanner.collectors.AwsMskCollector());
-                }
-                if (enabled.contains("cis")) {
-                    collectors.add(new io.kafkascanner.collectors.CisCollector());
-                }
-                if (enabled.contains("aiven")) {
-                    collectors.add(new io.kafkascanner.collectors.AivenCollector());
-                }
-                if (enabled.contains("rpcloud") || enabled.contains("redpanda")) {
-                    collectors.add(new io.kafkascanner.collectors.RedpandaCloudCollector());
-                }
-                if (enabled.contains("azure") || enabled.contains("eventhubs")) {
-                    collectors.add(new io.kafkascanner.collectors.AzureEventHubsCollector());
-                }
-                if (enabled.contains("k8s") || enabled.contains("kubernetes")) {
-                    collectors.add(new io.kafkascanner.collectors.K8sNetworkPolicyCollector());
-                }
-                if (enabled.contains("gcp")) {
-                    collectors.add(new io.kafkascanner.collectors.GcpFirewallCollector());
-                }
-                if (enabled.contains("streams")) {
-                    collectors.add(new io.kafkascanner.collectors.StreamsCollector());
-                }
+                var collectors = buildCollectors(collectorsCsv);
                 System.out.println("Collecting cluster data ("
                     + collectors.stream().map(Collector::name)
                         .collect(java.util.stream.Collectors.joining(",")) + ")...");
@@ -394,6 +327,78 @@ public final class Main implements Runnable {
             e.printStackTrace();
             System.exit(EXIT_ERROR);
         }
+    }
+
+    private static java.util.List<Collector> buildCollectors(String collectorsCsv) {
+        var enabled = CollectorRunner.parseNames(collectorsCsv);
+        var collectors = new java.util.ArrayList<Collector>();
+        if (enabled.contains("adminclient")) {
+            collectors.add(new AdminClientCollector());
+        }
+        if (enabled.contains("jmx")) {
+            collectors.add(new io.kafkascanner.collectors.JmxCollector());
+        }
+        if (enabled.contains("filesystem")) {
+            collectors.add(new io.kafkascanner.collectors.FilesystemCollector());
+        }
+        if (enabled.contains("tls")) {
+            collectors.add(new io.kafkascanner.collectors.TlsCollector());
+        }
+        if (enabled.contains("process")) {
+            collectors.add(new io.kafkascanner.collectors.ProcessCollector());
+        }
+        if (enabled.contains("connect")) {
+            collectors.add(new io.kafkascanner.collectors.ConnectCollector());
+        }
+        if (enabled.contains("schemaregistry")) {
+            collectors.add(new io.kafkascanner.collectors.SchemaRegistryCollector());
+        }
+        if (enabled.contains("restproxy")) {
+            collectors.add(new io.kafkascanner.collectors.RestProxyCollector());
+        }
+        if (enabled.contains("docs")) {
+            collectors.add(new io.kafkascanner.collectors.DocsCollector());
+        }
+        if (enabled.contains("alerts")) {
+            collectors.add(new io.kafkascanner.collectors.AlertRuleCollector());
+        }
+        if (enabled.contains("siem")) {
+            collectors.add(new io.kafkascanner.collectors.SiemCollector());
+        }
+        if (enabled.contains("zk")) {
+            collectors.add(new io.kafkascanner.collectors.ZkAdminCollector());
+        }
+        if (enabled.contains("consumerjmx")) {
+            collectors.add(new io.kafkascanner.collectors.ConsumerJmxCollector());
+        }
+        if (enabled.contains("confluentcloud") || enabled.contains("cc")) {
+            collectors.add(new io.kafkascanner.collectors.ConfluentCloudCollector());
+        }
+        if (enabled.contains("awsmsk") || enabled.contains("msk")) {
+            collectors.add(new io.kafkascanner.collectors.AwsMskCollector());
+        }
+        if (enabled.contains("cis")) {
+            collectors.add(new io.kafkascanner.collectors.CisCollector());
+        }
+        if (enabled.contains("aiven")) {
+            collectors.add(new io.kafkascanner.collectors.AivenCollector());
+        }
+        if (enabled.contains("rpcloud") || enabled.contains("redpanda")) {
+            collectors.add(new io.kafkascanner.collectors.RedpandaCloudCollector());
+        }
+        if (enabled.contains("azure") || enabled.contains("eventhubs")) {
+            collectors.add(new io.kafkascanner.collectors.AzureEventHubsCollector());
+        }
+        if (enabled.contains("k8s") || enabled.contains("kubernetes")) {
+            collectors.add(new io.kafkascanner.collectors.K8sNetworkPolicyCollector());
+        }
+        if (enabled.contains("gcp")) {
+            collectors.add(new io.kafkascanner.collectors.GcpFirewallCollector());
+        }
+        if (enabled.contains("streams")) {
+            collectors.add(new io.kafkascanner.collectors.StreamsCollector());
+        }
+        return collectors;
     }
 
     private void printTerminal(ScanResult result) {

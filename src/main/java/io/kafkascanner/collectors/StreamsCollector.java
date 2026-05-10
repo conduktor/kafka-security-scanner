@@ -163,7 +163,7 @@ public final class StreamsCollector implements Collector {
      * The state directory and every immediate child must:
      *   - exist
      *   - have permissions 0700 or 0750
-     *   - have no OTHERS_WRITE
+     *   - have no OTHERS_WRITE.
      */
     private static DirAudit auditStateDir(String dir) {
         var path = Path.of(dir);
