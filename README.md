@@ -1,5 +1,9 @@
 # kafka-security-scanner
 
+**Status: work in progress.** Catalogue, collectors and report formats are still moving. APIs and exit codes may change between commits.
+
+Site: **https://conduktor.github.io/kafka-security-scanner/**
+
 Scan a Kafka cluster against a catalogue of security and reliability controls. Works against Apache Kafka and anything that speaks the protocol.
 
 Give it a bootstrap server (plus credentials if the cluster needs them) and a principal that can `Describe` brokers, topics, and ACLs. You get back a graded report. Hook it into CI to fail PRs that introduce regressions.
