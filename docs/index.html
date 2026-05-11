@@ -212,10 +212,8 @@
       }
       .brand-icon svg { width: 18px; height: 18px; }
       .brand-text { display: flex; flex-direction: column; line-height: 1.05; }
-      .brand-text .name { font-weight: 650; font-size: 15px; letter-spacing: -0.01em; }
-      .brand-text .by { font-size: 10.5px; color: var(--muted); font-weight: 500; margin-top: 2px; letter-spacing: 0.01em; }
-      .brand-text .by a { color: var(--muted); }
-      .brand-text .by a:hover { color: var(--text); }
+      .brand-text .name { font-weight: 650; font-size: 15px; letter-spacing: -0.01em; white-space: nowrap; }
+      .brand-text .by { font-size: 10.5px; color: var(--muted); font-weight: 500; margin-top: 2px; letter-spacing: 0.01em; white-space: nowrap; }
 
       .nav-star {
         display: inline-flex; align-items: center; gap: 7px;
@@ -237,9 +235,9 @@
         font-variant-numeric: tabular-nums; min-width: 18px; text-align: center;
       }
       .nav-links { display: flex; align-items: center; gap: 24px; }
-      .nav-links a { color: var(--muted); font-size: 14px; font-weight: 500; }
+      .nav-links a { color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap; }
       .nav-links a:hover { color: var(--text); }
-      @media (max-width: 760px) { .nav-links a:not(.btn):not(.nav-star) { display: none; } }
+      @media (max-width: 980px) { .nav-links a:not(.btn):not(.nav-star) { display: none; } }
 
       /* Buttons */
       .btn {
@@ -744,11 +742,11 @@
           </span>
           <span class="brand-text">
             <span class="name">kafka-security-scanner</span>
-            <span class="by">by <a href="https://www.conduktor.io" target="_blank" rel="noopener">conduktor</a></span>
+            <span class="by">by conduktor</span>
           </span>
         </a>
         <nav class="nav-links">
-          <a href="#what">What it catches</a>
+          <a href="#what">Catches</a>
           <a href="#how">How it works</a>
           <a href="#features">Features</a>
           <a href="#compliance">Compliance</a>
