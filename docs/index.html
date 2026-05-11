@@ -2,11 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F508MVXD3Z"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { dataLayer.push(arguments); }
+      gtag("js", new Date());
+      gtag("config", "G-F508MVXD3Z");
+    </script>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>kafka-security-scanner — audit Kafka like your auditor would</title>
     <meta
       name="description"
-      content="Open-source Kafka security &amp; reliability scanner. 138 CEL-policy controls mapped to PCI-DSS, SOC 2, ISO 27001, NIST 800-53 and CWE. SARIF for CI, HTML for stakeholders, PDF for sign-off — one command."
+      content="Open-source Kafka security scanner. 138 controls mapped to PCI-DSS, SOC 2, ISO 27001, NIST 800-53, CWE. SARIF for CI, HTML for stakeholders, PDF for sign-off."
     />
     <meta
       name="keywords"
@@ -20,21 +27,25 @@
     <meta name="theme-color" content="#0f172a" />
     <meta name="color-scheme" content="light" />
     <link rel="canonical" href="https://conduktor.github.io/kafka-security-scanner/" />
+    <link rel="sitemap" type="application/xml" href="sitemap.xml" />
 
     <!-- Open Graph -->
     <meta property="og:title" content="kafka-security-scanner — audit Kafka like your auditor would" />
     <meta
       property="og:description"
-      content="138 CEL-policy controls mapped to PCI-DSS, SOC 2, ISO 27001, NIST 800-53 and CWE. SARIF for CI, HTML for stakeholders, PDF for sign-off — one command."
+      content="138 controls mapped to PCI-DSS, SOC 2, ISO 27001, NIST 800-53, CWE. SARIF for CI, HTML for stakeholders, PDF for sign-off."
     />
     <meta property="og:url" content="https://conduktor.github.io/kafka-security-scanner/" />
     <meta property="og:site_name" content="kafka-security-scanner" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://conduktor.github.io/kafka-security-scanner/report-control-center.png" />
+    <meta property="og:image:width" content="3200" />
+    <meta property="og:image:height" content="2000" />
+    <meta property="og:image:type" content="image/png" />
     <meta
       property="og:image:alt"
-      content="kafka-security-scanner — HTML control-center report"
+      content="kafka-security-scanner — HTML control-center report with severity badges, theme filters and per-control evidence"
     />
 
     <!-- Twitter -->
@@ -49,6 +60,7 @@
     <meta name="twitter:image" content="https://conduktor.github.io/kafka-security-scanner/report-control-center.png" />
 
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="apple-touch-icon" href="favicon.svg" />
 
     <link rel="preconnect" href="https://api.github.com" crossorigin />
     <link rel="dns-prefetch" href="https://github.com" />
@@ -145,6 +157,21 @@
             }
           }
         ]
+      }
+    </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "kafka-security-scanner",
+        "url": "https://conduktor.github.io/kafka-security-scanner/",
+        "publisher": {
+          "@type": "Organization",
+          "name": "Conduktor",
+          "url": "https://www.conduktor.io",
+          "logo": "https://conduktor.github.io/kafka-security-scanner/favicon.svg"
+        }
       }
     </script>
 
