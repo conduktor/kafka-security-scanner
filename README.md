@@ -2,7 +2,7 @@
 
 **Status: work in progress.** Catalogue, collectors and report formats are still moving. APIs and exit codes may change between commits.
 
-Site: **https://conduktor.github.io/kafka-security-scanner/**
+Site: **https://kafka-security-scanner.dev/**
 
 Scan a Kafka cluster against a catalogue of security and reliability controls. Works against Apache Kafka and anything that speaks the protocol.
 

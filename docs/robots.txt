@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://conduktor.github.io/kafka-security-scanner/sitemap.xml
+Sitemap: https://kafka-security-scanner.dev/sitemap.xml
